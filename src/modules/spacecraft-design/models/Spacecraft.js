@@ -2,14 +2,24 @@
  * @file src/modules/spacecraft-design/models/Spacecraft.js
  * @owner Member 2 (Spacecraft Design)
  * @goal Composite 3D spacecraft assembler combining Structure, SolarPanels, Propulsion,
- *       and Antenna into a single THREE.Group reusable in both Design and Launch/Orbit scenes.
+ *       Battery pack accents, and Antenna into one THREE.Group reusable across phases.
  */
 
 import * as THREE from "three";
+import { getComponentById } from "../data/components.js";
+import { Structure } from "./Structure.js";
+import { SolarPanels } from "./SolarPanels.js";
+import { Propulsion } from "./Propulsion.js";
+import { Antenna } from "./Antenna.js";
 
 export class Spacecraft {
   constructor() {
     this.group = new THREE.Group();
+    this.group.name = "assembled-spacecraft";
+    this._structureBuilder = new Structure();
+    this._solarBuilder = new SolarPanels();
+    this._propulsionBuilder = new Propulsion();
+    this._antennaBuilder = new Antenna();
   }
 
   /**
@@ -18,8 +28,59 @@ export class Spacecraft {
    * @returns {THREE.Group}
    */
   assemble(selection) {
-    // TODO: Clear existing children, instantiate subsystem models, snap to Structure attachment points
+    this._clearChildren();
+
+    const structureData = getComponentById("structures", selection.structureId);
+    const solarData = getComponentById("solarPanels", selection.solarPanelId);
+    const batteryData = getComponentById("batteries", selection.batteryId);
+    const propulsionData = getComponentById("propulsion", selection.propulsionId);
+    const antennaData = getComponentById("antennas", selection.antennaId);
+
+    if (structureData) {
+      this.group.add(this._structureBuilder.build(structureData));
+    }
+
+    const anchors = this._structureBuilder.getAttachmentPoints();
+
+    if (solarData) {
+      this.group.add(this._solarBuilder.build(solarData, anchors));
+    }
+
+    if (propulsionData) {
+      const propGroup = this._propulsionBuilder.build(propulsionData);
+      propGroup.position.copy(anchors.propulsion);
+      this.group.add(propGroup);
+    }
+
+    if (antennaData) {
+      const antGroup = this._antennaBuilder.build(antennaData);
+      antGroup.position.copy(anchors.antenna);
+      this.group.add(antGroup);
+    }
+
+    if (batteryData) {
+      const batteryPack = this._buildBatteryAccent(batteryData);
+      batteryPack.position.copy(anchors.batteryBack);
+      this.group.add(batteryPack);
+    }
+
     return this.group;
+  }
+
+  /** @param {boolean} deployed */
+  setSolarDeployed(deployed) {
+    this._solarBuilder.setDeployed(deployed);
+  }
+
+  /** @param {boolean} active */
+  setThrustActive(active) {
+    this._propulsionBuilder.setThrustActive(active);
+  }
+
+  /** Advance solar wing hinge & thruster plume animations. */
+  update(deltaTime) {
+    this._solarBuilder.update(deltaTime);
+    this._propulsionBuilder.update(deltaTime);
   }
 
   /** @returns {THREE.Group} */
@@ -29,6 +90,34 @@ export class Spacecraft {
 
   /** Dispose geometries and materials when removing spacecraft from scene. */
   dispose() {
-    // TODO: Traverse this.group and dispose geometries/materials cleanly
+    this._clearChildren();
+  }
+
+  _buildBatteryAccent(batteryData) {
+    const scale = batteryData.id === "deep-space-cells" ? 1.35 : batteryData.id === "li-ion-dual" ? 1.05 : 0.75;
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32 * scale, 0.24 * scale, 0.14),
+      new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        metalness: 0.65,
+        roughness: 0.35,
+      })
+    );
+    pack.name = `battery:${batteryData.id}`;
+    return pack;
+  }
+
+  _clearChildren() {
+    while (this.group.children.length > 0) {
+      const child = this.group.children[0];
+      this.group.remove(child);
+      child.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          materials.forEach((mat) => mat.dispose());
+        }
+      });
+    }
   }
 }

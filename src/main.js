@@ -1,55 +1,117 @@
 /**
  * @file src/main.js
- * @owner Shared / Member 4 (Interface & Integration)
- * @goal Application bootstrapper. Currently runs the Phase 0 Three.js verification cube;
- *       in Phase 1+ it will initialize SceneManager, GameState, and GameInterface.
+ * @owner Member 2 (Spacecraft Design) — Standalone Test Harness on feature/spacecraft-design
+ * @goal Mounts the Spacecraft Design 3D assembly bay with sample mission presets so Member 2
+ *       can visually build, rotate, and test spacecraft compatibility directly in the browser.
+ *       (Member 4 will replace this entry point with initGame() during final integration.)
  */
 
-import * as THREE from "three";
 import "./styles/main.css";
+import { SceneManager } from "./core/SceneManager.js";
+import { GameState } from "./core/GameState.js";
+import * as spacecraftDesign from "./modules/spacecraft-design/index.js";
 
-// Phase 0 verification scene (replace with initGame() once module integration starts)
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x101827);
+const SAMPLE_MISSIONS = {
+  none: null,
+  leo: {
+    missionId: "earth-climate-leo",
+    title: "Earth Climate Monitor (LEO)",
+    targetOrbitId: "LEO",
+    budgetMillions: 55,
+    minSciencePoints: 50,
+    requiredDataRateKbps: 256,
+    targetDistanceKm: 550,
+    instruments: [
+      {
+        id: "multispectral-cam",
+        name: "Multispectral Imager",
+        massKg: 28,
+        powerWatts: 75,
+        dataRateKbps: 256,
+        costMillions: 5.0,
+        sciencePoints: 55,
+      },
+    ],
+  },
+  geo: {
+    missionId: "weather-geo",
+    title: "Global Weather Relay (GEO)",
+    targetOrbitId: "GEO",
+    budgetMillions: 95,
+    minSciencePoints: 75,
+    requiredDataRateKbps: 2048,
+    targetDistanceKm: 35786,
+    instruments: [
+      {
+        id: "ir-sounder",
+        name: "IR Atmospheric Sounder",
+        massKg: 65,
+        powerWatts: 180,
+        dataRateKbps: 1500,
+        costMillions: 12.0,
+        sciencePoints: 80,
+      },
+    ],
+  },
+  lunar: {
+    missionId: "lunar-mapper",
+    title: "Lunar Surface Mapper",
+    targetOrbitId: "LUNAR",
+    budgetMillions: 140,
+    minSciencePoints: 110,
+    requiredDataRateKbps: 8000,
+    targetDistanceKm: 384400,
+    instruments: [
+      {
+        id: "sar-radar",
+        name: "Lunar SAR Radar",
+        massKg: 140,
+        powerWatts: 420,
+        dataRateKbps: 6000,
+        costMillions: 18.0,
+        sciencePoints: 120,
+      },
+    ],
+  },
+};
 
-const camera = new THREE.PerspectiveCamera(
-  60,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  100
-);
-camera.position.z = 5;
+const appRoot = document.getElementById("app") || document.body;
+const sceneManager = new SceneManager(appRoot);
+const gameState = new GameState();
+gameState.setMission(SAMPLE_MISSIONS.leo);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-document.body.appendChild(renderer.domElement);
+const uiRoot = document.createElement("div");
+appRoot.appendChild(uiRoot);
 
-const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-const material = new THREE.MeshStandardMaterial({
-  color: 0x2196f3,
-  metalness: 0.5,
-  roughness: 0.4,
+// Lightweight mission-context switcher for testing compatibility rules in browser
+const testBar = document.createElement("div");
+testBar.style.cssText =
+  "position:fixed;top:16px;left:16px;z-index:20;display:flex;gap:8px;align-items:center;" +
+  "padding:8px 12px;border-radius:10px;background:rgba(11,17,32,0.85);backdrop-filter:blur(10px);" +
+  "border:1px solid rgba(56,189,248,0.28);color:#e2e8f0;font-size:12px;";
+testBar.innerHTML = `
+  <span style="color:#38bdf8;font-weight:700;">TEST MISSION:</span>
+  <select id="test-mission-select" style="background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:4px 8px;">
+    <option value="leo" selected>Earth Climate Monitor (LEO · 550 km)</option>
+    <option value="geo">Global Weather Relay (GEO · 35,786 km)</option>
+    <option value="lunar">Lunar Surface Mapper (384,400 km)</option>
+    <option value="none">Free Build (No Mission Constraints)</option>
+  </select>
+`;
+appRoot.appendChild(testBar);
+
+testBar.querySelector("#test-mission-select").addEventListener("change", (e) => {
+  gameState.setMission(SAMPLE_MISSIONS[e.target.value]);
 });
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
 
-const light = new THREE.DirectionalLight(0xffffff, 3);
-light.position.set(3, 3, 5);
-scene.add(light);
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+spacecraftDesign.mount(sceneManager, gameState, uiRoot);
 
-function animate() {
+let lastTime = performance.now();
+function animate(now) {
   requestAnimationFrame(animate);
-  cube.rotation.x += 0.005;
-  cube.rotation.y += 0.01;
-  renderer.render(scene, camera);
+  const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+  spacecraftDesign.update(deltaTime);
+  sceneManager.render();
 }
-
-animate();
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+requestAnimationFrame(animate);
