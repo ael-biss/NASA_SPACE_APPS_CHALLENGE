@@ -118,16 +118,73 @@ export class Structure {
       antenna: new THREE.Vector3(0, halfH, 0),
       batteryFront: new THREE.Vector3(0, -halfH * 0.25, faceOffsetZ + 0.04),
       batteryBack: new THREE.Vector3(0, -halfH * 0.25, -faceOffsetZ - 0.04),
+      payloadSlots: this._buildPayloadSlots(shape, halfW, halfH, halfD),
       busWidth: width,
       busHeight: height,
+      busDepth: depth,
     };
 
     return group;
   }
 
   /**
+   * Compute distributed payload mounting anchors strictly outside the outer bus & collar
+   * surface, kept within front/back sectors clear of solar wings, star-tracker, and battery.
+   * @param {string} shape
+   * @param {number} halfW
+   * @param {number} halfH
+   * @param {number} halfD
+   * @returns {Array<{ position: THREE.Vector3, normal: THREE.Vector3 }>}
+   */
+  _buildPayloadSlots(shape, halfW, halfH, halfD) {
+    const upperY = halfH * 0.36;
+    const lowerY = -halfH * 0.36;
+
+    if (shape === "box") {
+      const zFront = halfD * 1.04;
+      const flankX = halfW * 0.56;
+      const specs = [
+        { pos: [0, lowerY, zFront], norm: [0, 0, 1] },
+        { pos: [flankX, upperY, zFront], norm: [0, 0, 1] },
+        { pos: [-flankX, upperY, zFront], norm: [0, 0, 1] },
+        { pos: [0, upperY, -zFront], norm: [0, 0, -1] },
+        { pos: [flankX, upperY, -zFront], norm: [0, 0, -1] },
+        { pos: [-flankX, upperY, -zFront], norm: [0, 0, -1] },
+        { pos: [flankX, lowerY, zFront], norm: [0, 0, 1] },
+        { pos: [-flankX, lowerY, zFront], norm: [0, 0, 1] },
+      ];
+      return specs.map(({ pos, norm }) => ({
+        position: new THREE.Vector3(...pos),
+        normal: new THREE.Vector3(...norm).normalize(),
+      }));
+    }
+
+    // Place hex/oct slots on the outer collar radius at +/-32 deg around +Z and -Z
+    const outerR = halfW * 1.04;
+    const angle = (32 * Math.PI) / 180;
+    const sinA = Math.sin(angle);
+    const cosA = Math.cos(angle);
+
+    const specs = [
+      { pos: [0, lowerY, outerR], norm: [0, 0, 1] },
+      { pos: [outerR * sinA, upperY, outerR * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-outerR * sinA, upperY, outerR * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [0, upperY, -outerR], norm: [0, 0, -1] },
+      { pos: [outerR * sinA, upperY, -outerR * cosA], norm: [sinA, 0, -cosA] },
+      { pos: [-outerR * sinA, upperY, -outerR * cosA], norm: [-sinA, 0, -cosA] },
+      { pos: [outerR * sinA, lowerY, outerR * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-outerR * sinA, lowerY, outerR * cosA], norm: [-sinA, 0, cosA] },
+    ];
+
+    return specs.map(({ pos, norm }) => ({
+      position: new THREE.Vector3(...pos),
+      normal: new THREE.Vector3(...norm).normalize(),
+    }));
+  }
+
+  /**
    * Return mounting anchor positions for subsystems based on the built bus.
-   * @returns {{ solarLeft: THREE.Vector3, solarRight: THREE.Vector3, propulsion: THREE.Vector3, antenna: THREE.Vector3, batteryFront: THREE.Vector3, batteryBack: THREE.Vector3, busWidth: number, busHeight: number }}
+   * @returns {{ solarLeft: THREE.Vector3, solarRight: THREE.Vector3, propulsion: THREE.Vector3, antenna: THREE.Vector3, batteryFront: THREE.Vector3, batteryBack: THREE.Vector3, payloadSlots?: Array<{ position: THREE.Vector3, normal: THREE.Vector3 }>, busWidth: number, busHeight: number, busDepth?: number }}
    */
   getAttachmentPoints() {
     return this._attachmentPoints;

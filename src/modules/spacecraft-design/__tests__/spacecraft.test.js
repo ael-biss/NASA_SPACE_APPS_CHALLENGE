@@ -113,3 +113,60 @@ test("Spacecraft.assemble builds a complete 3D THREE.Group and disposes cleanly"
   craft.dispose();
   assert.equal(group.children.length, 0);
 });
+
+test("Spacecraft mounts procedural and async .glb instruments and ignores stale async loads", async () => {
+  let resolveCam;
+  let camDisposed = false;
+  const mockLoader = {
+    loadModel: (url) =>
+      new Promise((resolve) => {
+        const g = new THREE.Group();
+        const geo = new THREE.BoxGeometry(10, 10, 10);
+        geo.dispose = () => {
+          camDisposed = true;
+        };
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial());
+        mesh.userData.sharedAsset = true;
+        g.add(mesh);
+        if (url.includes("optical-camera")) {
+          resolveCam = () => resolve(g);
+        } else {
+          resolve(g);
+        }
+      }),
+    dispose: () => {},
+  };
+
+  const craft = new Spacecraft({ assetLoader: mockLoader });
+  const group = craft.assemble(DEFAULT_SELECTION, [
+    { id: "INS_LIDAR_01", name: "Laser Altimeter (LIDAR)" },
+    { id: "INS_CAM_01", name: "Optical Camera" },
+  ]);
+
+  // 5 base subsystems + payload-instruments group containing synchronous procedural LIDAR
+  assert.equal(group.children.length, 6);
+  const payloadGroup = group.getObjectByName("payload-instruments");
+  assert.ok(payloadGroup);
+  assert.ok(payloadGroup.getObjectByName("instrument:INS_LIDAR_01"));
+
+  // Re-assemble with Free Build before optical-camera resolves; stale load must not attach
+  craft.assemble(DEFAULT_SELECTION, []);
+  assert.equal(group.children.length, 5);
+  resolveCam();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(group.children.length, 5);
+
+  // Assemble with .glb instrument and verify normalized mount + sharedAsset protection on rebuild
+  craft.assemble(DEFAULT_SELECTION, [{ id: "INS_CAM_01", name: "Optical Camera" }]);
+  resolveCam();
+  await new Promise((r) => setTimeout(r, 0));
+  const mountedCam = group.getObjectByName("instrument:INS_CAM_01");
+  assert.ok(mountedCam);
+  const box = new THREE.Box3().setFromObject(mountedCam);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  assert.ok(Math.max(size.x, size.y, size.z) < 0.6, `Expected normalized instrument size, got ${size.toArray()}`);
+
+  craft.dispose();
+  assert.equal(camDisposed, false);
+});

@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { AssetLoader } from "../../shared/utils/AssetLoader.js";
 import { Spacecraft } from "./models/Spacecraft.js";
 import { SpacecraftConfig } from "./logic/SpacecraftConfig.js";
 import { SpacecraftConfigurator } from "./ui/SpacecraftConfigurator.js";
@@ -25,13 +26,19 @@ export function mount(sceneManager, gameState, uiContainer) {
   const bayGroup = new THREE.Group();
   bayGroup.name = "spacecraft-assembly-bay";
 
-  // Studio + orbital rim lighting
-  const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.85);
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+  // Studio + orbital rim lighting & procedural reflections for metallic PBR instruments
+  const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x1e293b, 1.15);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
   keyLight.position.set(5, 7, 6);
-  const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.1);
-  rimLight.position.set(-6, -3, -5);
-  bayGroup.add(ambientLight, keyLight, rimLight);
+  const backFillLight = new THREE.DirectionalLight(0xbae6fd, 1.35);
+  backFillLight.position.set(-5, 4, -6);
+  const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.0);
+  rimLight.position.set(-6, -3, 3);
+  bayGroup.add(hemiLight, keyLight, backFillLight, rimLight);
+
+  const envRT = _createStudioEnvironment(sceneManager.renderer);
+  const previousEnv = sceneManager.scene.environment;
+  sceneManager.scene.environment = envRT.texture;
 
   // Subtle starfield & assembly bay turntable ring
   const stars = _createStarfield();
@@ -63,8 +70,9 @@ export function mount(sceneManager, gameState, uiContainer) {
   controls.update();
 
   // Restore previous spacecraft selection if player returns to Design phase
+  const assetLoader = new AssetLoader();
   const config = new SpacecraftConfig(gameState.spacecraft?.selection);
-  const spacecraft = new Spacecraft();
+  const spacecraft = new Spacecraft({ assetLoader });
   bayGroup.add(spacecraft.getGroup());
 
   const configurator = new SpacecraftConfigurator(uiContainer, {
@@ -84,9 +92,10 @@ export function mount(sceneManager, gameState, uiContainer) {
   const syncSpacecraft = () => {
     isSyncing = true;
     try {
-      config.setInstruments(gameState.mission?.instruments);
+      const instruments = gameState.mission?.instruments ?? [];
+      config.setInstruments(instruments);
       const spec = config.toSpacecraftSpec(gameState.mission);
-      spacecraft.assemble(spec.selection);
+      spacecraft.assemble(spec.selection, instruments);
       configurator.updateStats(spec);
       gameState.setSpacecraft(spec);
     } finally {
@@ -109,6 +118,9 @@ export function mount(sceneManager, gameState, uiContainer) {
     controls,
     spacecraft,
     configurator,
+    assetLoader,
+    envRT,
+    previousEnv,
     unsubscribe,
   };
 }
@@ -126,14 +138,28 @@ export function update(deltaTime) {
 /** Clean up assembly bay 3D objects, OrbitControls, subscriptions, and configurator UI. */
 export function unmount() {
   if (!activeState) return;
-  const { sceneManager, bayGroup, controls, spacecraft, configurator, unsubscribe } = activeState;
+  const {
+    sceneManager,
+    bayGroup,
+    controls,
+    spacecraft,
+    configurator,
+    assetLoader,
+    envRT,
+    previousEnv,
+    unsubscribe,
+  } = activeState;
 
   unsubscribe();
   configurator.destroy();
   controls.dispose();
   spacecraft.dispose();
+  assetLoader.dispose();
+  sceneManager.scene.environment = previousEnv ?? null;
+  envRT?.dispose();
 
   bayGroup.traverse((obj) => {
+    if (obj.userData?.sharedAsset) return;
     if (obj.geometry) obj.geometry.dispose();
     if (obj.material) {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -148,12 +174,42 @@ export function unmount() {
 /**
  * Build a standalone 3D spacecraft model from a SpacecraftSpec for Launch & Orbit.
  * @param {import('../../shared/interfaces/SpacecraftSpec.js').SpacecraftSpec} spacecraftSpec
+ * @param {Array<Object>} [instruments=[]]
  * @returns {{ spacecraft: Spacecraft, group: THREE.Group }}
  */
-export function buildSpacecraftModel(spacecraftSpec) {
+export function buildSpacecraftModel(spacecraftSpec, instruments = []) {
   const spacecraft = new Spacecraft();
-  const group = spacecraft.assemble(spacecraftSpec.selection);
+  const group = spacecraft.assemble(spacecraftSpec.selection, instruments);
   return { spacecraft, group };
+}
+
+function _createStudioEnvironment(renderer) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x0f172a);
+
+  const panels = [
+    { pos: [0, 6, 4], scale: [10, 4, 1], color: 0xffffff },
+    { pos: [6, 3, -4], scale: [6, 6, 1], color: 0xe0f2fe },
+    { pos: [-6, 2, 0], scale: [6, 6, 1], color: 0x7dd3fc },
+    { pos: [0, -6, 0], scale: [10, 1, 10], color: 0x1e293b },
+  ];
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  for (const p of panels) {
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: p.color }));
+    mesh.position.set(...p.pos);
+    mesh.scale.set(...p.scale);
+    mesh.lookAt(0, 0, 0);
+    envScene.add(mesh);
+  }
+
+  const envRT = pmrem.fromScene(envScene, 0.04);
+  geo.dispose();
+  envScene.traverse((obj) => {
+    if (obj.material) obj.material.dispose();
+  });
+  pmrem.dispose();
+  return envRT;
 }
 
 function _createStarfield() {
