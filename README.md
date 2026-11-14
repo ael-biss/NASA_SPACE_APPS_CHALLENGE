@@ -1,123 +1,138 @@
- Have a question? Join us on Space Apps Connect
-.
-Space Apps Logo 2026 color
+# Space Mission Design Game — 2026 NASA Space Apps Challenge
 
-    About Us
-    Awards
+An interactive 3D web game built with **Three.js** and **Vite** where players design, configure, launch, and evaluate a complete space mission while balancing real-world engineering trade-offs across **budget, mass, power, communications, data rate, and orbital mechanics**.
 
-    Home
-    2026 NASA Space Apps Challenge
-    2026 Challenges
-    Space Mission Design Game
+---
 
-An astronaut performs a spacewalk above Earth, holding a large circular equipment panel while attached to the spacecraft.
-Space Mission Design Game
-Join the Challenge
+## Project Overview
 
-    DetailsResourcesTeams
+Players progress through four connected phases:
 
-Event
-2026 NASA Space Apps Challenge
-Difficulty
-Intermediate
-Beginner/Youth
-Subjects
-Games
+1. **Mission & Science Planning** — Choose a mission objective (e.g., Earth Observation LEO, Weather GEO, Lunar Orbiter) and select scientific payload instruments.
+2. **Spacecraft Design** — Assemble a 3D spacecraft from modular subsystems (structure, solar panels, batteries, propulsion, antenna, avionics) and verify engineering compatibility.
+3. **Launch & Orbit Simulation** — Pick a launch vehicle, check payload mass and $\Delta v$ margins, and watch the 3D launch and orbital insertion around Earth.
+4. **Mission Evaluation** — Review mission success or failure, score breakdown, and engineering feedback on resource trade-offs.
 
-Designing a space mission requires careful consideration of competing demands, including mission objectives, spacecraft design, scientific instruments, launch vehicles, budgets, power, mass, communications, and orbital constraints. For students who rarely get to experiment with an entire mission from concept to operation, these trade-offs often remain abstract. Your challenge is to create an interactive game that allows participants to design, manage, and simulate a complete space mission while making engineering decisions, managing limited resources, and evaluating how each choice shapes the success of their mission.
+---
 
-Background
+## Tech Stack
 
-Space missions are complex systems in which scientific objectives, engineering requirements, available resources, and operational constraints must work together. Designing a mission involves decisions about the spacecraft, scientific instruments, launch vehicle, orbit, power, mass, communications, budget, and mission lifetime. A decision that improves one aspect of a mission can create limitations in another. For example, adding a more capable instrument may increase scientific value while also increasing mass, power consumption, data volume, and cost. Understanding these trade-offs is essential to developing successful space missions.
+| Tool | Purpose |
+| :--- | :--- |
+| **Three.js** | 3D rendering engine (`WebGLRenderer`, GLB models, orbit & spacecraft scenes) |
+| **Vite** | Development server and production bundler |
+| **Docker & Docker Compose** | Identical `node:24-alpine` dev environment across all team computers |
+| **GitHub** | Version control, feature branches, and Pull Request reviews |
+| **Vercel** | Cloud deployment for the production static bundle (`dist/`) |
 
-However, learning space mission design is often limited to theoretical exercises because students and aspiring engineers rarely have access to an environment where they can experiment with an entire mission from concept to operation. Existing tools often focus on individual topics such as orbital mechanics, spacecraft design, or rocket launches without demonstrating how these elements interact as a complete system. This leaves a gap between learning individual space concepts and understanding how mission teams make integrated engineering decisions.
+---
 
-An interactive game can help address this gap by allowing participants to experiment, make decisions, encounter constraints, and learn from both successful and unsuccessful missions. Players could design missions individually or collaborate in teams of up to four people, with each participant contributing to the mission strategy and working together to achieve the best possible result. Potential approaches could include mission planning, spacecraft configuration, instrument selection, resource management, orbital selection, launch planning, communications, and mission simulation. You are encouraged to develop creative alternatives that make the experience engaging while preserving the fundamental trade-offs of real-world space mission design.
-Objectives
+## Team Ownership & Branches
 
-Your challenge is to create an interactive Space Mission Design Game that allows participants to experience the process of designing and managing a complete space mission. You may consider enabling a player to participate individually or collaborate with a team of up to four people, with participants working together to make strategic decisions and achieve the highest possible mission performance.
+Each team member owns an isolated module folder under `src/modules/` and develops on their dedicated branch. See **[tasks.md](./tasks.md)** for the full A-to-Z task breakdown.
 
-The game could allow participants to define a mission objective, establish mission requirements, design a spacecraft, select scientific instruments, choose a launch vehicle and orbit, and manage key constraints such as budget, mass, power, communications, data, and mission lifetime. Players benefit from seeing how their decisions affect other parts of the mission, and from understanding the trade-offs involved in real-world space mission design.
+| Member | Role | Owned Directory | Git Branch |
+| :--- | :--- | :--- | :--- |
+| **Member 1** | Mission & Science | `src/modules/mission-science/` | `feature/mission-science` |
+| **Member 2** | Spacecraft Design | `src/modules/spacecraft-design/` | `feature/spacecraft-design` |
+| **Member 3** | Launch & Orbit | `src/modules/launch-orbit/` | `feature/launch-orbit` |
+| **Member 4** | Interface & Integration | `src/modules/game-interface/` | `feature/game-interface` |
 
-A strong solution might include a functional interactive game or simulation with a clear user interface, mission configuration system, resource management mechanisms, collaboration or multiplayer functionality for up to four participants, and a mission simulation and evaluation system. The game could provide feedback on mission performance and reward effective engineering decisions, efficient resource management, successful collaboration, and achievement of mission objectives. Participants are encouraged to develop creative game mechanics, visualizations, scoring systems, and mission scenarios that make the experience engaging while requiring players to solve problems, make trade-offs, and collaborate to achieve mission success.
-Potential Considerations
+---
 
-You may (but are not required to) consider the following:
+## Architecture & Folder Structure
 
-Game design and experience
+```text
+NASA_SPACE_APPS_CHALLENGE/
+├── public/
+│   └── models/                  # Static 3D assets (.glb / .gltf)
+│       └── space_craft.glb
+├── src/
+│   ├── main.js                  # Application bootstrap
+│   ├── core/
+│   │   ├── SceneManager.js      # Shared Three.js Scene, Camera, Renderer, resize loop
+│   │   └── GameState.js         # Central reactive pub/sub state store
+│   ├── modules/
+│   │   ├── mission-science/     # Member 1: missions, instruments, scoring
+│   │   ├── spacecraft-design/   # Member 2: component DB, 3D assembly, compatibility
+│   │   ├── launch-orbit/        # Member 3: rockets, orbits, delta-v physics, 3D launch
+│   │   └── game-interface/      # Member 4: phase flow, HUD, stepper, results modal
+│   ├── shared/
+│   │   ├── data/                # Shared physical/game constants (constants.js)
+│   │   ├── interfaces/          # Cross-module contracts (MissionSpec, SpacecraftSpec, LaunchResult, GameModule)
+│   │   └── utils/               # Shared helpers (AssetLoader.js, formatters.js)
+│   └── styles/
+│       └── main.css             # Global layout and UI theme variables
+├── index.html
+├── package.json
+├── package-lock.json
+├── Dockerfile                   # Multi-stage production Nginx build
+├── compose.yaml                 # Local Node 24 Docker dev server
+├── tasks.md                     # Detailed A-to-Z tasks per team member
+└── README.md
+```
 
-    The game could be accessible to participants with different levels of knowledge about space science and engineering.
-    The game could support both single-player and team play, allowing up to four participants to collaborate on the same mission.
-    Team members could have different responsibilities, such as mission planning, spacecraft design, science, communications, or resource management.
-    Clear objectives and feedback help participants understand why a mission succeeds or fails.
-    Consider making the game interactive, allowing participants to modify their mission design and simulate it multiple times.
-    A scoring system could reward mission success, scientific value, efficient use of resources, and effective decision making.
-    The game could include different difficulty levels, mission types, or scenarios.
+### Cross-Module Data Flow
 
-Mission design
+```text
+Member 1 (MissionSpec) ──▶ GameState ──▶ Member 2 (SpacecraftSpec + 3D model)
+                               │
+                               ▼
+Member 3 (LaunchResult) ◀── GameState ◀── Member 4 (GameFlowController & HUD)
+                               │
+                               ▼
+                   Member 1 (MissionEvaluator) ──▶ Results Screen
+```
 
-    Participants could begin by defining a mission objective before making spacecraft and engineering decisions.
-    Consider giving every major design decision a consequence. For example, increasing the number of instruments could increase scientific capabilities but also increase mass, power consumption, cost, and data generation.
-    Consider demonstrating that there is rarely a single perfect solution. Different combinations of spacecraft, instruments, orbits, and launch vehicles could achieve the same mission objective.
-    Consider including realistic constraints such as limited budget, spacecraft mass, available power, communications capacity, and mission lifetime.
+---
 
-Spacecraft and payload
+## Getting Started (Docker)
 
-    The spacecraft could include components such as structure, power systems, batteries, communications, onboard computers, attitude control, and scientific instruments.
-    Scientific instruments could have different characteristics, including mass, power consumption, cost, data generation, and scientific value.
-    Consider allowing participants to choose between simple and advanced spacecraft components depending on the difficulty level.
+You do **not** need Node.js installed locally; everything runs inside Docker using `node:24-alpine`.
 
-Orbit and launch
+1. **Start the development server:**
+   ```bash
+   docker compose up
+   ```
+   *(Or run in the background with `docker compose up -d`.)*
+2. **Open the game in your browser:**
+   `http://localhost:5173`
+3. **Stop the server:**
+   ```bash
+   docker compose down
+   ```
 
-    The game could provide several orbital options and explain their basic characteristics.
-    Participants could consider how the selected orbit affects coverage, observation opportunities, communications, mission lifetime, and other mission requirements.
-    Launch vehicles could have different payload capacities, costs, and orbital capabilities.
-    Consider building in a check that the spacecraft mass and selected orbit are compatible with the chosen launch vehicle.
+> **Linux without `sudo`:** If Docker fails with a socket permission error, initialize rootless Docker once with `dockerd-rootless-setuptool.sh install` and ensure `DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock` is set.
 
-Resource Management
+---
 
-    The game should clearly display the main resources available to the mission team.
-    Important resources could include:
-        Mass: the total mass of the spacecraft and payload.
-        Power: the energy available to operate spacecraft systems and instruments.
-        Budget: the financial resources available to develop and operate the mission.
-        Data: the amount of information generated by scientific instruments.
-        Communications: the spacecraft's ability to transmit data to ground stations.
-        Time: The planned development and operational lifetime of the mission.
-    You may consider identifying which resources are most critical to your specific mission.
+## Team Git & Collaboration Rules
 
-Collaboration
+- **Never push directly to `main`** — keep `main` stable and merge via Pull Requests.
+- **Work on your own module branch** (`feature/mission-science`, `feature/spacecraft-design`, `feature/launch-orbit`, `feature/game-interface`).
+- **Agree before editing `src/shared/` or `src/core/`** — changes there affect all four members.
+- **Dependencies:** Install packages inside Docker (`docker compose exec game npm install <pkg>`) and commit **both** `package.json` and `package-lock.json`.
 
-    In team mode, up to four participants could work together on the same mission.
-    Consider giving team members different roles or responsibilities while asking them to make decisions collectively.
-    The game could include situations where team members must negotiate between competing priorities.
-    The final mission result could depend on how effectively the team coordinates its decisions.
+---
 
-Educational value
+## Deployment (Vercel)
 
-    Scientific and engineering concepts work best when explained in simple terms rather than assuming advanced knowledge.
-    Complex concepts such as orbital altitude, payload capacity, power consumption, data rate, and communications could be introduced through the game itself.
-    Consider including short explanations, tutorials, visual indicators, or optional learning resources.
-    Consider teaching participants why a particular decision affects mission performance, rather than simply indicating whether the decision is correct or incorrect.
+1. Import the GitHub repository into **Vercel**.
+2. Use the Vite preset:
+   - **Framework:** `Vite`
+   - **Install command:** `npm install`
+   - **Build command:** `npm run build`
+   - **Output directory:** `dist`
+3. Alternatively, build a standalone production container using `Dockerfile`:
+   ```bash
+   docker build -t space-mission-game .
+   docker run -p 8080:80 space-mission-game
+   ```
 
-You may consider adding features such as:
+---
 
-    Multiple mission scenarios with different objectives
-    Random events or unexpected mission constraints
-    Different difficulty levels
-    Realistic or simplified spacecraft models
-    Interactive spacecraft visualizations
-    Mission dashboards showing real-time resource consumption
-    Leaderboards or mission rankings
-    Mission reports generated at the end of each simulation
-    The ability to save, share, and compare mission designs
-    Cooperative missions for teams of up to four participants
-    Competitive scenarios where different teams design missions to solve the same objective
-    A sandbox mode that allows participants to experiment without predefined constraints
-    A post-mission analysis explaining why the mission succeeded or failed
+## Challenge Context & Resources
 
-For data and resources related to this challenge, refer to the Resources tab at the top of the page. More resources may be added before the hackathon begins.
-
-## resources : 
-https://science.nasa.gov/3d-resources/
-
+- **Event:** 2026 NASA Space Apps Challenge — *Space Mission Design Game*
+- **NASA 3D Resources:** https://science.nasa.gov/3d-resources/
+- **Full A-to-Z Roadmap & Member Checklists:** [tasks.md](./tasks.md)
