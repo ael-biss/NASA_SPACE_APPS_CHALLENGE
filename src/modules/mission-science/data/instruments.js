@@ -4,8 +4,7 @@
  * @owner Member 1 (Mission & Science)
  * @goal Database of scientific instruments with their scientific
  *       capabilities and engineering trade-offs.
- *
-**/
+ */
 
 export const INSTRUMENTS = [
   {
@@ -14,34 +13,26 @@ export const INSTRUMENTS = [
     category: "Imaging",
     description:
       "Captures visible-light images to observe planetary surfaces, geological formations and atmospheric features.",
-
     measurement: "Visible-light images",
     scientificPurpose: "Surface imaging and geological mapping",
-
     compatibleObjectives: [
       "OBJ_SURFACE_IMAGING",
       "OBJ_GEOLOGICAL_MAPPING",
       "OBJ_CLOUD_OBSERVATION"
     ],
-
-    applicableTargets: [
-      "Earth",
-      "Moon",
-      "Mars"
-    ],
-
+    applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
 
     massKg: 12,
-    powerW: 25,
-    dataRateMbps: 8,
-    costM: 15,
+    powerWatts: 25,
+    dataRateKbps: 8000,
+    costMillions: 15,
     sciencePoints: 20,
+
     model: "/models/instruments/optical-camera.glb",
     resolution: "High spatial resolution",
     sensitivity: "Visible-light detection",
     measurementRange: "Visible spectrum (approximately 400–700 nm)",
-
     limitations: [
       "Requires suitable illumination for reflected-light imaging.",
       "Cannot directly observe beneath opaque surfaces.",
@@ -55,34 +46,26 @@ export const INSTRUMENTS = [
     category: "Spectroscopy",
     description:
       "Measures infrared radiation at different wavelengths to help identify minerals, surface materials and atmospheric properties.",
-
     measurement: "Infrared spectral signatures",
     scientificPurpose: "Surface composition and atmospheric analysis",
-
     compatibleObjectives: [
       "OBJ_MINERAL_ANALYSIS",
       "OBJ_SURFACE_COMPOSITION",
       "OBJ_ATMOSPHERIC_STUDY"
     ],
-
-    applicableTargets: [
-      "Earth",
-      "Moon",
-      "Mars"
-    ],
-
+    applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
 
     massKg: 18,
-    powerW: 35,
-    dataRateMbps: 5,
-    costM: 20,
+    powerWatts: 35,
+    dataRateKbps: 5000,
+    costMillions: 20,
     sciencePoints: 25,
+
     model: "/models/instruments/infrared-spectrometer.glb",
     resolution: "Spectral resolution depends on instrument design",
     sensitivity: "Infrared radiation detection",
     measurementRange: "Infrared wavelengths (instrument-dependent)",
-
     limitations: [
       "Atmospheric and thermal interference may affect measurements.",
       "Different materials can produce overlapping spectral signatures.",
@@ -96,34 +79,26 @@ export const INSTRUMENTS = [
     category: "Radar",
     description:
       "Transmits radio waves and analyzes their echoes to investigate surface properties and possible subsurface structures.",
-
     measurement: "Radio-wave reflections",
     scientificPurpose: "Surface structure and subsurface investigation",
-
     compatibleObjectives: [
       "OBJ_SUBSURFACE_MAPPING",
       "OBJ_ICE_DETECTION",
       "OBJ_SURFACE_STRUCTURE"
     ],
-
-    applicableTargets: [
-      "Earth",
-      "Moon",
-      "Mars"
-    ],
-
+    applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: true,
 
     massKg: 35,
-    powerW: 90,
-    dataRateMbps: 12,
-    costM: 30,
+    powerWatts: 90,
+    dataRateKbps: 12000,
+    costMillions: 30,
     sciencePoints: 30,
+
     model: "/models/instruments/radar-sounder.glb",
     resolution: "Depends on radar frequency and system design",
     sensitivity: "Reflected radio-wave detection",
     measurementRange: "Radio-frequency range (instrument-dependent)",
-
     limitations: [
       "Subsurface penetration depends on material properties and frequency.",
       "Interpretation of radar echoes can be ambiguous.",
@@ -137,34 +112,26 @@ export const INSTRUMENTS = [
     category: "Space Physics",
     description:
       "Measures the strength and direction of magnetic fields to investigate planetary magnetic environments and interactions with solar wind.",
-
     measurement: "Magnetic field strength and direction",
     scientificPurpose: "Planetary magnetic field investigation",
-
     compatibleObjectives: [
       "OBJ_MAGNETIC_FIELD",
       "OBJ_SOLAR_WIND_INTERACTION",
       "OBJ_SPACE_ENVIRONMENT"
     ],
-
-    applicableTargets: [
-      "Earth",
-      "Moon",
-      "Mars"
-    ],
-
+    applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
 
     massKg: 5,
-    powerW: 10,
-    dataRateMbps: 1,
-    costM: 10,
+    powerWatts: 10,
+    dataRateKbps: 1000,
+    costMillions: 10,
     sciencePoints: 25,
+
     model: "/models/instruments/magnemometer.glb",
     resolution: "Magnetic field measurement resolution depends on sensor design",
     sensitivity: "Detection of magnetic field variations",
     measurementRange: "Instrument-dependent magnetic field range",
-
     limitations: [
       "Spacecraft-generated magnetic interference can affect measurements.",
       "Usually requires careful positioning and calibration.",
@@ -187,11 +154,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
+
     massKg: 8,
-    powerW: 30,
-    dataRateMbps: 2,
-    costM: 25,
+    powerWatts: 30,
+    dataRateKbps: 2000,
+    costMillions: 25,
     sciencePoints: 30,
+
     resolution: "High mass resolution",
     sensitivity: "Detects trace chemical compounds",
     measurementRange: "Mass-to-charge ratio of ions",
@@ -201,6 +170,7 @@ export const INSTRUMENTS = [
       "Some measurements require gas or particle samples"
     ]
   },
+
   {
     id: "INS_LIDAR_01",
     name: "Laser Altimeter (LIDAR)",
@@ -216,11 +186,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: true,
+
     massKg: 21.4,
-    powerW: 59,
-    dataRateMbps: 4,
-    costM: 28,
+    powerWatts: 59,
+    dataRateKbps: 4000,
+    costMillions: 28,
     sciencePoints: 30,
+
     resolution: "High-resolution distance measurements",
     sensitivity: "Sensitive to reflected laser pulses",
     measurementRange: "Distance between spacecraft and surface",
@@ -230,6 +202,7 @@ export const INSTRUMENTS = [
       "Limited coverage compared with wide-angle cameras"
     ]
   },
+
   {
     id: "INS_UV_01",
     name: "Ultraviolet Spectrometer",
@@ -245,11 +218,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
+
     massKg: 12,
-    powerW: 22,
-    dataRateMbps: 3,
-    costM: 18,
+    powerWatts: 22,
+    dataRateKbps: 3000,
+    costMillions: 18,
     sciencePoints: 25,
+
     resolution: "Moderate to high spectral resolution",
     sensitivity: "Detects ultraviolet radiation",
     measurementRange: "Ultraviolet spectrum (approximately 10–400 nm)",
@@ -259,6 +234,7 @@ export const INSTRUMENTS = [
       "Sensitive to background radiation"
     ]
   },
+
   {
     id: "INS_THERMAL_01",
     name: "Thermal Infrared Imager",
@@ -274,11 +250,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
+
     massKg: 10,
-    powerW: 20,
-    dataRateMbps: 6,
-    costM: 16,
+    powerWatts: 20,
+    dataRateKbps: 6000,
+    costMillions: 16,
     sciencePoints: 25,
+
     resolution: "Moderate spatial resolution",
     sensitivity: "Sensitive to thermal radiation",
     measurementRange: "Thermal infrared spectrum (approximately 8–14 μm)",
@@ -288,6 +266,7 @@ export const INSTRUMENTS = [
       "Requires thermal calibration"
     ]
   },
+
   {
     id: "INS_PARTICLE_01",
     name: "Particle Detector",
@@ -303,11 +282,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
+
     massKg: 6,
-    powerW: 15,
-    dataRateMbps: 2,
-    costM: 14,
+    powerWatts: 15,
+    dataRateKbps: 2000,
+    costMillions: 14,
     sciencePoints: 25,
+
     resolution: "Energy-dependent particle measurements",
     sensitivity: "Detects energetic charged particles",
     measurementRange: "Particle energy and flux",
@@ -317,6 +298,7 @@ export const INSTRUMENTS = [
       "Requires shielding and calibration"
     ]
   },
+
   {
     id: "INS_SEISM_01",
     name: "Seismometer",
@@ -331,11 +313,13 @@ export const INSTRUMENTS = [
     ],
     applicableTargets: ["Earth", "Moon", "Mars"],
     isActive: false,
+
     massKg: 5,
-    powerW: 8,
-    dataRateMbps: 1,
-    costM: 12,
+    powerWatts: 8,
+    dataRateKbps: 1000,
+    costMillions: 12,
     sciencePoints: 30,
+
     resolution: "High sensitivity to ground motion",
     sensitivity: "Detects small ground vibrations",
     measurementRange: "Seismic frequencies and ground displacement",
@@ -345,7 +329,6 @@ export const INSTRUMENTS = [
       "Provides limited information without long observation periods"
     ]
   }
-
 ];
 
 /**
