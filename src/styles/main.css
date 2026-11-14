@@ -1,0 +1,33 @@
+/**
+ * @file src/styles/main.css
+ * @owner Member 4 (Interface & Integration)
+ * @goal Global CSS reset, full-viewport Three.js canvas layout, and shared UI theme variables
+ *       used across HUD, phase stepper, and module side panels.
+ */
+
+:root {
+  --bg-space: #0b1120;
+  --bg-panel: rgba(15, 23, 42, 0.85);
+  --text-primary: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent-blue: #38bdf8;
+  --status-ok: #22c55e;
+  --status-warn: #f59e0b;
+  --status-error: #ef4444;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-space);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+}

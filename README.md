@@ -118,12 +118,6 @@ You may consider adding features such as:
 
 For data and resources related to this challenge, refer to the Resources tab at the top of the page. More resources may be added before the hackathon begins.
 
-NASA Space Apps is funded by NASA's Science Mission Directorate through a contract with Booz Allen Hamilton
-, Mindgrub
-, and SecondMuse
-.
+## resources : 
+https://science.nasa.gov/3d-resources/
 
-Copyright ©2026 NASA | Privacy Policy | Legal | Contact | Resources
-Connect with #SpaceApps
-
-NASA Space Apps Challenge
