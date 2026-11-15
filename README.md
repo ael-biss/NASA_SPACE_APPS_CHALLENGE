@@ -155,38 +155,6 @@ NASA_SPACE_APPS_CHALLENGE/
 └── README.md
 ```
 
-### Cross-Module Data Flow
-
-```text
-Member 1 (MissionSpec) ──▶ GameState ──▶ Member 2 (SpacecraftSpec + 3D model)
-                               │
-                               ▼
-Member 3 (LaunchResult) ◀── GameState ◀── Member 4 (GameFlowController & HUD)
-                               │
-                               ▼
-                   Member 1 (MissionEvaluator) ──▶ Results Screen
-```
-
----
-
-## Team Ownership & Git Workflow
-
-Each team member owns an isolated module folder under `src/modules/` and develops on their dedicated feature branch. See **[tasks.md](./tasks.md)** for the full task breakdown.
-
-| Member | Role | Owned Directory | Git Branch |
-| :--- | :--- | :--- | :--- |
-| **Member 1** | Mission & Science | `src/modules/mission-science/` | `feature/mission-science` |
-| **Member 2** | Spacecraft Design | `src/modules/spacecraft-design/` | `feature/spacecraft-design` |
-| **Member 3** | Launch & Orbit | `src/modules/launch-orbit/` | `feature/launch-orbit` |
-| **Member 4** | Interface & Integration | `src/modules/game-interface/` | `feature/game-interface` |
-
-### Collaboration Rules
-- **Never push directly to `main`** — keep `main` stable and merge via Pull Requests.
-- **Agree before editing `src/shared/` or `src/core/`** — changes there affect all four modules.
-- **Dependencies:** When using Docker, install packages with `make add PKG=<package>` and commit both `package.json` and `package-lock.json`.
-
----
-
 ## Deployment
 
 ### Vercel
@@ -211,5 +179,4 @@ docker run --rm -p 8080:80 space-mission-game
 
 - **Event:** 2026 NASA Space Apps Challenge — *Space Mission Design Game*
 - **NASA 3D Resources:** https://science.nasa.gov/3d-resources/
-- **Task Roadmap:** [tasks.md](./tasks.md)
 - **License:** See [LICENSE](./LICENSE)
