@@ -7,6 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as THREE from "three";
 
 import { ORBIT_IDS, PHYSICS } from "../../../shared/data/constants.js";
 import { DEFAULT_SELECTION } from "../../spacecraft-design/data/components.js";
@@ -588,4 +589,107 @@ test("PlanetScene latLonToVector3 and LaunchAnimation anchor liftoff to KSC LC-3
   anim.dispose?.();
   anim.reset();
   scene.dispose();
+});
+
+test("LaunchAnimation completely destroys spacecraft and vehicle stack on explosive failures and restores on replay", () => {
+  const mechanics = new OrbitMechanics();
+  const overloadedSpec = new SpacecraftConfig({
+    structureId: "cubesat-6u",
+    solarPanelId: "fixed-body",
+    batteryId: "li-ion-compact",
+    propulsionId: "xenon-ion",
+    antennaId: "s-band-patch",
+    avionicsId: "basic-obc",
+  }).toSpacecraftSpec();
+  const breakupResult = mechanics.simulateLaunch("medium-orbital", overloadedSpec, "LEO", {
+    allowInvalid: true,
+  });
+  assert.equal(breakupResult.failureMode, "structural-breakup");
+
+  const scGroup = new THREE.Group();
+  scGroup.name = "assembled-spacecraft";
+  const anim = new LaunchAnimation();
+
+  const scenarios = [
+    { mode: "structural-breakup", result: breakupResult },
+    {
+      mode: "explosion",
+      result: {
+        success: false,
+        failureMode: "explosion",
+        phases: [{ id: "liftoff", status: "failed" }],
+      },
+    },
+    {
+      mode: "suborbital-fall",
+      result: {
+        success: false,
+        failureMode: "suborbital-fall",
+        phases: [
+          { id: "liftoff", status: "passed" },
+          { id: "max-q", status: "passed" },
+          { id: "ascent", status: "passed" },
+          { id: "stage-sep", status: "passed" },
+          { id: "orbit-insertion", status: "failed" },
+        ],
+      },
+    },
+  ];
+
+  for (const { mode, result } of scenarios) {
+    let failedInfo = null;
+    let completed = false;
+    anim.setSpeed(4);
+    anim.start(
+      { id: "medium-orbital" },
+      { group: scGroup },
+      getOrbitById("LEO"),
+      result,
+      {
+        onPhaseUpdate: (_idx, _phase, meta) => {
+          if (meta?.failed) failedInfo = meta;
+        },
+        onComplete: () => {
+          completed = true;
+        },
+      }
+    );
+
+    const stack = anim.getGroup().getObjectByName("launch-vehicle-stack");
+    assert.ok(stack, `${mode}: stack must exist at liftoff`);
+    assert.equal(stack.visible, true, `${mode}: stack visible at liftoff`);
+    assert.equal(scGroup.visible, true, `${mode}: spacecraft visible at liftoff`);
+
+    for (let i = 0; i < 120 && !failedInfo; i++) {
+      anim.update(0.08);
+    }
+    assert.ok(failedInfo, `${mode}: failure event must trigger`);
+    assert.equal(failedInfo.failureMode, mode);
+    assert.equal(stack.visible, false, `${mode}: vehicle stack must be hidden on destruction`);
+    assert.equal(scGroup.visible, false, `${mode}: spacecraft must be completely hidden on destruction`);
+    assert.ok(anim._fireballs.length > 0, `${mode}: explosion fireballs must spawn`);
+    assert.ok(anim._debris.length > 0, `${mode}: shattered debris fragments must spawn`);
+
+    const rotXAtBlast = stack.rotation.x;
+    const rotZAtBlast = stack.rotation.z;
+    for (let i = 0; i < 100; i++) {
+      anim.update(0.08);
+    }
+    assert.equal(completed, true, `${mode}: onComplete must fire after hold window`);
+    assert.equal(stack.visible, false, `${mode}: stack stays gone after explosion fades`);
+    assert.equal(scGroup.visible, false, `${mode}: spacecraft stays gone after explosion fades`);
+    assert.equal(stack.rotation.x, rotXAtBlast, `${mode}: hidden stack should not keep tumbling`);
+    assert.equal(stack.rotation.z, rotZAtBlast, `${mode}: hidden stack should not keep tumbling`);
+    assert.equal(anim._fireballs.length, 0, `${mode}: fireballs must clear cleanly`);
+    assert.equal(anim._debris.length, 0, `${mode}: debris fragments must clear cleanly`);
+  }
+
+  // Replaying with the same spacecraft handle must restore visibility
+  const okSpec = new SpacecraftConfig(DEFAULT_SELECTION).toSpacecraftSpec();
+  const okResult = mechanics.simulateLaunch("medium-orbital", okSpec, "LEO");
+  anim.start({ id: "medium-orbital" }, { group: scGroup }, getOrbitById("LEO"), okResult);
+  assert.equal(scGroup.visible, true, "replaying launch must restore spacecraft visibility");
+
+  anim.dispose?.();
+  anim.reset();
 });

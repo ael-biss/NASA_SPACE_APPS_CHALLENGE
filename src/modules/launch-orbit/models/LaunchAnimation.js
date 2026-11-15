@@ -136,8 +136,8 @@ export class LaunchAnimation {
 
     if (this._failureTriggered) {
       this._failureHoldSec += dt;
-      // Keep tumbling detached stack slowly
-      if (this._stackGroup) {
+      // Keep tumbling detached stack slowly only if still intact
+      if (this._stackGroup && this._stackGroup.visible) {
         this._stackGroup.rotation.z += dt * 1.4;
         this._stackGroup.rotation.x += dt * 0.9;
       }
@@ -304,6 +304,7 @@ export class LaunchAnimation {
 
     // Mount the player's actual 3D spacecraft inside the payload bay
     if (this._spacecraftGroup) {
+      this._spacecraftGroup.visible = true;
       this._spacecraftGroup.scale.setScalar(0.24);
       this._spacecraftGroup.position.set(0, 0.2, 0);
       this._stackGroup.add(this._spacecraftGroup);
@@ -595,8 +596,8 @@ export class LaunchAnimation {
     const origin = this._stackGroup ? this._stackGroup.position.clone() : new THREE.Vector3();
 
     if (mode === "explosion" || mode === "structural-breakup" || mode === "suborbital-fall") {
-      this._spawnExplosion(origin, mode === "explosion" ? 1.35 : 1.0);
-      // Scatter visual debris fragments
+      this._spawnExplosion(origin, mode === "explosion" ? 1.35 : 1.15);
+      // Scatter visual debris fragments from fairings, booster, and shattered spacecraft
       if (this._fairingLeft?.visible) {
         this._fairingLeft.visible = false;
         this._fairingRight.visible = false;
@@ -607,11 +608,14 @@ export class LaunchAnimation {
         this._boosterGroup.visible = false;
         this._spawnPartChunk(origin, new THREE.Vector3(0.4, -1.6, -0.8), 0xef4444, 0.22);
       }
-      if (this._spacecraftGroup && mode === "structural-breakup") {
+      if (this._spacecraftGroup) {
+        this._spacecraftGroup.visible = false;
         this._spawnPartChunk(origin, new THREE.Vector3(1.4, 1.3, 0.4), 0x1d4ed8, 0.16);
         this._spawnPartChunk(origin, new THREE.Vector3(-1.3, 1.1, -0.5), 0x1d4ed8, 0.16);
+        this._spawnPartChunk(origin, new THREE.Vector3(0.7, -1.1, 1.2), 0xd4af37, 0.15);
+        this._spawnPartChunk(origin, new THREE.Vector3(-0.9, -0.7, -1.1), 0x94a3b8, 0.14);
       }
-      if (mode === "explosion" && this._stackGroup) {
+      if (this._stackGroup) {
         this._stackGroup.visible = false;
       }
     } else if (mode === "thermal-failure") {
