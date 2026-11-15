@@ -1,8 +1,8 @@
 /**
  * @file src/modules/spacecraft-design/models/Propulsion.js
  * @owner Member 2 (Spacecraft Design)
- * @goal Builds the 3D propulsion tank, engine bell or ion grid, and animated exhaust plume
- *       used in both the Assembly Bay burn test and Launch & Orbit orbital insertion.
+ * @goal Builds the low-poly 3D propulsion tank, faceted thruster bell or ion grid with
+ *       warm amber-gold inner chamber lining, and animated exhaust plume.
  */
 
 import * as THREE from "three";
@@ -25,24 +25,41 @@ export class Propulsion {
 
     const metalMaterial = new THREE.MeshStandardMaterial({
       color: 0x475569,
-      metalness: 0.88,
-      roughness: 0.3,
+      metalness: 0.78,
+      roughness: 0.34,
+      flatShading: true,
+      side: THREE.DoubleSide,
+    });
+    const darkCollarMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2b3444,
+      metalness: 0.72,
+      roughness: 0.38,
+      flatShading: true,
     });
     const tankMaterial = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      metalness: 0.7,
+      color: 0xcbd5e1,
+      metalness: 0.55,
+      roughness: 0.32,
+      flatShading: true,
+    });
+    const throatGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.65,
+      metalness: 0.3,
       roughness: 0.25,
+      side: THREE.DoubleSide,
     });
 
     const isIon = componentData.style === "ion";
     const isLarge = componentData.style === "biprop";
-    const tankRadius = isLarge ? 0.34 : isIon ? 0.24 : 0.2;
-    const tankHeight = isLarge ? 0.38 : 0.24;
+    const tankRadius = isLarge ? 0.32 : isIon ? 0.24 : 0.2;
+    const tankHeight = isLarge ? 0.26 : 0.16;
 
-    // Adapter / propellant tank collar
+    // Stepped adapter collar & propellant housing
     const tank = new THREE.Mesh(
-      new THREE.CylinderGeometry(tankRadius, tankRadius * 0.9, tankHeight, 16),
-      tankMaterial
+      new THREE.CylinderGeometry(tankRadius, tankRadius * 0.86, tankHeight, 8),
+      isLarge ? tankMaterial : darkCollarMaterial
     );
     tank.position.y = -tankHeight / 2;
     group.add(tank);
@@ -50,16 +67,15 @@ export class Propulsion {
     let nozzleBottomY = -tankHeight;
 
     if (isIon) {
-      // Hall-effect thruster glowing discharge ring
       const housing = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.26, 0.28, 0.14, 24),
+        new THREE.CylinderGeometry(0.25, 0.27, 0.14, 12),
         metalMaterial
       );
       housing.position.y = -tankHeight - 0.07;
       group.add(housing);
 
       const ionGrid = new THREE.Mesh(
-        new THREE.TorusGeometry(0.16, 0.035, 10, 24),
+        new THREE.TorusGeometry(0.16, 0.035, 8, 16),
         new THREE.MeshStandardMaterial({
           color: 0x38bdf8,
           emissive: 0x0284c7,
@@ -72,19 +88,49 @@ export class Propulsion {
 
       nozzleBottomY = -tankHeight - 0.14;
     } else {
-      // Chemical nozzle bell
-      const bellTop = isLarge ? 0.14 : 0.09;
-      const bellBottom = isLarge ? 0.3 : 0.18;
+      // Faceted low-poly thruster bell with warm golden-amber inner chamber & stiffener lip
+      const bellTop = isLarge ? 0.14 : 0.1;
+      const bellBottom = isLarge ? 0.31 : 0.21;
       const bellHeight = isLarge ? 0.42 : 0.28;
 
+      const throatCollar = new THREE.Mesh(
+        new THREE.CylinderGeometry(bellTop * 1.35, bellTop * 1.15, 0.06, 10),
+        darkCollarMaterial
+      );
+      throatCollar.position.y = -tankHeight - 0.03;
+      group.add(throatCollar);
+
       const nozzle = new THREE.Mesh(
-        new THREE.CylinderGeometry(bellTop, bellBottom, bellHeight, 20, 1, false),
+        new THREE.CylinderGeometry(bellTop, bellBottom, bellHeight, 12, 1, true),
         metalMaterial
       );
-      nozzle.position.y = -tankHeight - bellHeight / 2;
+      nozzle.position.y = -tankHeight - 0.04 - bellHeight / 2;
       group.add(nozzle);
 
-      nozzleBottomY = -tankHeight - bellHeight;
+      const innerLiner = new THREE.Mesh(
+        new THREE.CylinderGeometry(bellTop * 0.82, bellBottom * 0.88, bellHeight * 0.86, 12, 1, true),
+        throatGlowMaterial
+      );
+      innerLiner.position.y = -tankHeight - 0.05 - bellHeight / 2;
+      group.add(innerLiner);
+
+      const throatGlowDisc = new THREE.Mesh(
+        new THREE.CircleGeometry(bellBottom * 0.82, 12),
+        throatGlowMaterial
+      );
+      throatGlowDisc.rotation.x = Math.PI / 2;
+      throatGlowDisc.position.y = -tankHeight - 0.12;
+      group.add(throatGlowDisc);
+
+      const rimRing = new THREE.Mesh(
+        new THREE.TorusGeometry(bellBottom, 0.018, 6, 12),
+        darkCollarMaterial
+      );
+      rimRing.rotation.x = Math.PI / 2;
+      rimRing.position.y = -tankHeight - 0.04 - bellHeight;
+      group.add(rimRing);
+
+      nozzleBottomY = -tankHeight - 0.04 - bellHeight;
     }
 
     // Exhaust plume cones (hidden unless thrust is active)
