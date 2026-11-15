@@ -28,7 +28,10 @@ function _disposeObject(obj) {
     if (child.geometry) child.geometry.dispose();
     if (child.material) {
       const mats = Array.isArray(child.material) ? child.material : [child.material];
-      mats.forEach((mat) => mat.dispose());
+      mats.forEach((mat) => {
+        if (mat.map) mat.map.dispose();
+        mat.dispose();
+      });
     }
   });
 }

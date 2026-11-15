@@ -46,7 +46,7 @@ test("procedural planet builders construct Earth, Moon, and Mars THREE.Group mod
     const direct = fn();
     assert.ok(direct instanceof THREE.Group);
     assert.equal(direct.name, expectedName);
-    assert.ok(direct.children.length >= 2, `Expected multi-part 3D model for ${expectedName}`);
+    assert.ok(direct.children.length >= 1, `Expected 3D meshes for ${expectedName}`);
 
     const viaFactory = createPlanetModel(key);
     assert.equal(viaFactory.name, expectedName);

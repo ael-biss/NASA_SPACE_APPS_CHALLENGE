@@ -238,14 +238,39 @@ export class PlanetScene {
       const destMat = new THREE.MeshStandardMaterial({
         color: isMars ? 0xc2410c : 0x94a3b8,
         emissive: isMars ? 0x431407 : 0x1e293b,
-        roughness: isMars ? 0.75 : 0.92,
-        metalness: 0.06,
+        roughness: isMars ? 0.85 : 0.92,
+        metalness: 0.05,
       });
       this._destMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(destRadius, 36, 28),
+        new THREE.SphereGeometry(destRadius, 64, 48),
         destMat
       );
       destGroup.add(this._destMesh);
+
+      if (typeof Image !== "undefined") {
+        const loader = new THREE.TextureLoader();
+        const destUrl = isMars ? "/textures/mars.jpg" : "/textures/moon.jpg";
+        loader.load(
+          destUrl,
+          (destTex) => {
+            if (!this._destMesh || this._destMesh.material !== destMat) {
+              destTex.dispose();
+              return;
+            }
+            destTex.colorSpace = THREE.SRGBColorSpace;
+            destTex.anisotropy = 4;
+            this._textures.push(destTex);
+            destMat.map = destTex;
+            destMat.color.setHex(0xffffff);
+            destMat.emissive.setHex(0x000000);
+            destMat.needsUpdate = true;
+          },
+          undefined,
+          () => {
+            // Retain solid fallback color if texture fails to load
+          }
+        );
+      }
 
       if (isMars) {
         const marsAtmo = new THREE.Mesh(
