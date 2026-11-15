@@ -118,18 +118,18 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     targetMarker.position.x = view.orbitRadius;
   };
 
-  syncPlanetPreview(gameState?.mission);
+  const unsubscribe = gameState?.subscribe
+    ? gameState.subscribe(() => {
+        syncPlanetPreview(gameState.mission);
+      })
+    : null;
 
   const planner = new MissionPlanner(uiContainer, gameState, {
     onProceed: options.onProceed,
   });
   planner.mount();
 
-  const unsubscribe = gameState?.subscribe
-    ? gameState.subscribe(() => {
-        syncPlanetPreview(gameState.mission);
-      })
-    : null;
+  syncPlanetPreview(gameState?.mission);
 
   activeState = {
     sceneManager,
