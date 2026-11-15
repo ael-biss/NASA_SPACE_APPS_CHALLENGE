@@ -105,15 +105,44 @@ export class Spacecraft {
 
   _buildBatteryAccent(batteryData) {
     const scale = batteryData.id === "deep-space-cells" ? 1.35 : batteryData.id === "li-ion-dual" ? 1.05 : 0.75;
-    const pack = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32 * scale, 0.24 * scale, 0.14),
+    const pack = new THREE.Group();
+    pack.name = `battery:${batteryData.id}`;
+
+    const cradle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36 * scale, 0.28 * scale, 0.12),
       new THREE.MeshStandardMaterial({
-        color: 0x1e293b,
-        metalness: 0.65,
-        roughness: 0.35,
+        color: 0x2b3444,
+        metalness: 0.7,
+        roughness: 0.36,
+        flatShading: true,
       })
     );
-    pack.name = `battery:${batteryData.id}`;
+    pack.add(cradle);
+
+    const cells = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28 * scale, 0.21 * scale, 0.14),
+      new THREE.MeshStandardMaterial({
+        color: 0xcbd5e1,
+        metalness: 0.38,
+        roughness: 0.42,
+        flatShading: true,
+      })
+    );
+    cells.position.z = -0.02;
+    pack.add(cells);
+
+    const busbar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3 * scale, 0.045 * scale, 0.15),
+      new THREE.MeshStandardMaterial({
+        color: 0xf59e0b,
+        metalness: 0.45,
+        roughness: 0.32,
+        flatShading: true,
+      })
+    );
+    busbar.position.z = -0.025;
+    pack.add(busbar);
+
     return pack;
   }
 
