@@ -161,3 +161,131 @@ export function validateLiftoffTWR(rocket, payloadKg = 0) {
       : 'Thrust comfortably exceeds weight at liftoff.'
   };
 }
+
+/**
+ * Calculates a scientifically rigorous multi-stage Tsiolkovsky delta-v breakdown.
+ * Evaluates mass at ignition, mass at burnout, propellant mass fraction, TWR curve,
+ * and burn time for every stage from liftoff to orbit insertion.
+ *
+ * @param {Object} rocket
+ * @param {number} [payloadKg=0]
+ * @param {number} [fairingKg=0]
+ * @returns {{
+ *   totalIdealDeltaVMs: number,
+ *   stages: Array<{
+ *     name: string,
+ *     type: string,
+ *     ignitionMassKg: number,
+ *     burnoutMassKg: number,
+ *     propellantMassKg: number,
+ *     effectiveIspS: number,
+ *     deltaVMs: number,
+ *     burnDurationSec: number,
+ *     liftoffTWR: number,
+ *     burnoutTWR: number,
+ *     massRatio: number,
+ *   }>
+ * }}
+ */
+export function calculateMultiStageDeltaV(rocket, payloadKg = 0, fairingKg = 0) {
+  const stages = rocket?.stages ?? [];
+  if (!stages.length) {
+    return {
+      totalIdealDeltaVMs: rocket?.launcherDeltaVMs ?? 0,
+      stages: [],
+    };
+  }
+
+  let totalIdealDeltaVMs = 0;
+  const stageBreakdown = [];
+
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    const isFirstStage = i === 0;
+
+    // Mass above this stage consists of all subsequent stages plus payload
+    let massAboveKg = payloadKg;
+    for (let j = i + 1; j < stages.length; j++) {
+      massAboveKg += stageWetMassKg(stages[j]);
+    }
+
+    // Fairing is jettisoned after the first stage clears sensible atmosphere
+    const fairingOnThisStageKg = isFirstStage ? fairingKg : 0;
+    const ignitionMassKg = stageWetMassKg(stage) + massAboveKg + fairingOnThisStageKg;
+    const burnoutMassKg = (stage.dryMassKg ?? 0) + massAboveKg + fairingOnThisStageKg;
+
+    // Effective Isp: atmospheric weighted for booster; vacuum for upper stages
+    let effectiveIspS = representativeStageIspS(stage);
+    if (isFirstStage && stage.ispSeaLevelS && stage.ispVacuumS) {
+      effectiveIspS = stage.ispSeaLevelS * 0.35 + stage.ispVacuumS * 0.65;
+    } else if (!isFirstStage && stage.ispVacuumS) {
+      effectiveIspS = stage.ispVacuumS;
+    }
+
+    const massRatio = burnoutMassKg > 0 ? ignitionMassKg / burnoutMassKg : 1;
+    const stageDeltaVMs = massRatio > 1
+      ? effectiveIspS * STANDARD_GRAVITY * Math.log(massRatio)
+      : 0;
+
+    const thrustN = isFirstStage
+      ? stageLiftoffThrustN(stage)
+      : (stage.thrustVacuumN ?? stage.thrustN ?? stageLiftoffThrustN(stage));
+
+    const liftoffTWR = thrustToWeightRatio(thrustN, ignitionMassKg);
+    const burnoutTWR = thrustToWeightRatio(thrustN, burnoutMassKg);
+
+    const massFlowRateKgS = effectiveIspS > 0 && thrustN > 0
+      ? thrustN / (effectiveIspS * STANDARD_GRAVITY)
+      : 0;
+    const burnDurationSec = massFlowRateKgS > 0
+      ? (stage.propellantMassKg ?? 0) / massFlowRateKgS
+      : (stage.burnDurationSec ?? 0);
+
+    totalIdealDeltaVMs += stageDeltaVMs;
+    stageBreakdown.push({
+      name: stage.name ?? `Stage ${i + 1}`,
+      type: stage.type ?? (isFirstStage ? "booster" : "upper"),
+      ignitionMassKg: Math.round(ignitionMassKg),
+      burnoutMassKg: Math.round(burnoutMassKg),
+      propellantMassKg: stage.propellantMassKg ?? 0,
+      effectiveIspS: Number(effectiveIspS.toFixed(1)),
+      deltaVMs: Math.round(stageDeltaVMs),
+      burnDurationSec: Number(burnDurationSec.toFixed(1)),
+      liftoffTWR: Number(liftoffTWR.toFixed(2)),
+      burnoutTWR: Number(burnoutTWR.toFixed(2)),
+      massRatio: Number(massRatio.toFixed(3)),
+    });
+  }
+
+  return {
+    totalIdealDeltaVMs: Math.round(totalIdealDeltaVMs),
+    stages: stageBreakdown,
+  };
+}
+
+/**
+ * Calculates a scientifically rigorous multi-stage Tsiolkovsky delta-v breakdown.
+ * Evaluates mass at ignition, mass at burnout, propellant mass fraction, TWR curve,
+ * and burn time for every stage from liftoff to orbit insertion.
+ *
+ * @param {Object} rocket
+ * @param {number} [payloadKg=0]
+ * @param {number} [fairingKg=0]
+ * @returns {{
+ *   totalIdealDeltaVMs: number,
+ *   stages: Array<{
+ *     name: string,
+ *     type: string,
+ *     ignitionMassKg: number,
+ *     burnoutMassKg: number,
+ *     propellantMassKg: number,
+ *     effectiveIspS: number,
+ *     deltaVMs: number,
+ *     burnDurationSec: number,
+ *     liftoffTWR: number,
+ *     burnoutTWR: number,
+ *     massRatio: number,
+ *   }>
+ * }}
+ */
+
