@@ -88,6 +88,20 @@ export class InstrumentPayload {
         return;
       }
 
+      if (typeof window === "undefined") {
+        const raw = this._createFallbackInstrumentModel(instrument);
+        const mounted = this._normalizeAndMount(
+          raw,
+          instrument,
+          slot,
+          targetSize,
+          standoff,
+          materials
+        );
+        if (mounted) group.add(mounted);
+        return;
+      }
+
       this._loadAndMountGlb(
         modelSpec,
         instrument,
@@ -192,8 +206,48 @@ export class InstrumentPayload {
         group.add(mounted);
       }
     } catch (err) {
-      console.warn(`Failed to load instrument model "${url}" for ${instrument.id}:`, err);
+      if (version !== this._buildVersion) return;
+      console.warn(`Falling back to procedural sensor mesh for ${instrument.id}:`, err);
+      const fallback = this._createFallbackInstrumentModel(instrument);
+      const mounted = this._normalizeAndMount(
+        fallback,
+        instrument,
+        slot,
+        targetSize,
+        standoff,
+        materials
+      );
+      if (mounted && version === this._buildVersion) {
+        group.add(mounted);
+      }
     }
+  }
+
+  _createFallbackInstrumentModel(instrument) {
+    const pod = new THREE.Group();
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.18, 0.22),
+      new THREE.MeshStandardMaterial({
+        color: 0xd4af37,
+        metalness: 0.72,
+        roughness: 0.28,
+        flatShading: true,
+      })
+    );
+    const lens = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.08, 0.11, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        emissive: instrument?.id?.includes("RAD") ? 0x19bfff : 0x0284c7,
+        emissiveIntensity: 0.35,
+        metalness: 0.85,
+        roughness: 0.2,
+      })
+    );
+    lens.rotation.x = Math.PI / 2;
+    lens.position.z = 0.13;
+    pod.add(housing, lens);
+    return pod;
   }
 
   _resolveSlot(slots, index, targetSize) {

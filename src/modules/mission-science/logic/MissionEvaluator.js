@@ -112,16 +112,19 @@ export class MissionEvaluator {
         : `Insufficient downlink capacity. Required: ${missionSpec.requiredDataRateKbps} kbps, available: ${spacecraftSpec.maxDataRateKbps} kbps.`,
     });
 
-    // 7. Scientific return check
+    // 7. Scientific return check (requires mission to reach orbit to return science)
+    const scienceReturned = launchResult.success ? sciencePoints : 0;
     const sciencePassed =
-      sciencePoints >= missionSpec.minSciencePoints;
+      Boolean(launchResult.success) && scienceReturned >= missionSpec.minSciencePoints;
 
     checks.push({
       label: "Scientific objectives",
       passed: sciencePassed,
-      detail: sciencePassed
-        ? `Science score: ${sciencePoints} / ${missionSpec.minSciencePoints} required.`
-        : `Insufficient science points. Required: ${missionSpec.minSciencePoints}, obtained: ${sciencePoints}.`,
+      detail: !launchResult.success
+        ? `No science returned — mission lost before science operations (${sciencePoints} pts configured, 0 pts collected).`
+        : sciencePassed
+          ? `Science score: ${sciencePoints} / ${missionSpec.minSciencePoints} required.`
+          : `Insufficient science points. Required: ${missionSpec.minSciencePoints}, obtained: ${sciencePoints}.`,
     });
 
     // 8. Launch and orbit check
@@ -209,9 +212,11 @@ export class MissionEvaluator {
       return Math.min(actual / required, 1);
     };
 
-    // 1. Science return: 35 points
-    const scienceScore =
-      35 * ratio(sciencePoints, missionSpec.minSciencePoints);
+    // 1. Science return: 35 points (capped at 0 if launch/orbit failed before science return)
+    const missionSucceeded = Boolean(launchResult.success);
+    const scienceScore = missionSucceeded
+      ? 35 * ratio(sciencePoints, missionSpec.minSciencePoints)
+      : 0;
 
     // 2. Budget compliance: 20 points
     const budgetScore =
@@ -248,12 +253,12 @@ export class MissionEvaluator {
 
     // 6. Launch outcome: 10 points
     const launchScore =
-      launchResult.success &&
+      missionSucceeded &&
       launchResult.targetOrbitId === missionSpec.targetOrbitId
         ? 10
         : 0;
 
-    // Final score
+    // Final score (lost missions cannot exceed D grade / 69)
     const rawScore =
       scienceScore +
       budgetScore +
@@ -262,12 +267,16 @@ export class MissionEvaluator {
       spacecraftScore +
       launchScore;
 
-    const score = Math.round(rawScore);
+    const score = missionSucceeded
+      ? Math.round(rawScore)
+      : Math.min(Math.round(rawScore), 69);
 
     // Grade
     let grade;
 
-    if (score >= 90) grade = "A";
+    if (!missionSucceeded) {
+      grade = score >= 60 ? "D" : "F";
+    } else if (score >= 90) grade = "A";
     else if (score >= 80) grade = "B";
     else if (score >= 70) grade = "C";
     else if (score >= 60) grade = "D";
@@ -300,6 +309,14 @@ export class MissionEvaluator {
       grade,
       summary,
       checks: evaluation.checks,
+      budget: {
+        startingBudget: missionSpec.budgetMillions,
+        totalCost: Number(totalCost.toFixed(2)),
+        budgetRemaining: Number((missionSpec.budgetMillions - totalCost).toFixed(2)),
+        instrumentsCost: Number(instrumentCost.toFixed(2)),
+        spacecraftCost: Number(spacecraftSpec.costMillions.toFixed(2)),
+        launchCost: Number(launchResult.launchCostMillions.toFixed(2)),
+      },
     };
   }
 }

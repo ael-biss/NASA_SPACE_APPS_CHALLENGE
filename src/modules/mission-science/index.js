@@ -14,11 +14,11 @@ import { MissionPlanner } from "./ui/MissionPlanner.js";
 const evaluator = new MissionEvaluator();
 
 const ORBIT_VIEW_SPECS = {
-  LEO: { scale: 1.35, orbitRadius: 1.85, ringColor: 0x38bdf8 },
-  MEO: { scale: 1.3, orbitRadius: 2.2, ringColor: 0x60a5fa },
-  GEO: { scale: 1.2, orbitRadius: 2.55, ringColor: 0x93c5fd },
-  LUNAR: { scale: 1.2, orbitRadius: 1.95, ringColor: 0xe2e8f0 },
-  MARS: { scale: 1.28, orbitRadius: 2.05, ringColor: 0xfb923c },
+  LEO: { scale: 1.55, orbitRadius: 2.05, ringColor: 0x19bfff },
+  MEO: { scale: 1.48, orbitRadius: 2.38, ringColor: 0x1677ff },
+  GEO: { scale: 1.38, orbitRadius: 2.68, ringColor: 0x19bfff },
+  LUNAR: { scale: 1.42, orbitRadius: 2.15, ringColor: 0x35d58a },
+  MARS: { scale: 1.48, orbitRadius: 2.22, ringColor: 0xff9d24 },
 };
 
 let activeState = null;
@@ -49,30 +49,42 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const previewGroup = new THREE.Group();
   previewGroup.name = "mission-target-preview";
 
-  const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x0f172a, 0.75);
-  const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+  const hemi = new THREE.HemisphereLight(0xeaf4ff, 0x050b1b, 0.72);
+  const sun = new THREE.DirectionalLight(0xfff6e8, 2.25);
   sun.position.set(6, 4, 5);
-  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
+  const rimLight = new THREE.DirectionalLight(0x19bfff, 0.75);
   rimLight.position.set(-5, -2, -4);
   previewGroup.add(hemi, sun, rimLight, _createStarfield());
 
+  // Stage container offset slightly right so the left mission list never covers the planet
+  const stagePivot = new THREE.Group();
+  stagePivot.position.set(1.05, 0.1, 0);
+  previewGroup.add(stagePivot);
+
   const planetHolder = new THREE.Group();
   planetHolder.name = "planet-holder";
-  previewGroup.add(planetHolder);
+  stagePivot.add(planetHolder);
+
+  // Distant Earth visible in background when previewing Lunar missions
+  const bgEarth = createPlanetModel("procedural:earth");
+  bgEarth.scale.setScalar(0.75);
+  bgEarth.position.set(-2.5, 1.55, -5.8);
+  bgEarth.visible = false;
+  stagePivot.add(bgEarth);
 
   const orbitPivot = new THREE.Group();
-  orbitPivot.rotation.x = 0.32;
+  orbitPivot.rotation.x = 0.34;
   orbitPivot.rotation.z = -0.18;
-  previewGroup.add(orbitPivot);
+  stagePivot.add(orbitPivot);
 
   const orbitRingMaterial = new THREE.MeshBasicMaterial({
     color: ORBIT_VIEW_SPECS.LEO.ringColor,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.58,
     side: THREE.DoubleSide,
   });
   const orbitRing = new THREE.Mesh(
-    new THREE.RingGeometry(1.83, 1.87, 72),
+    new THREE.RingGeometry(1.83, 1.87, 84),
     orbitRingMaterial
   );
   orbitRing.rotation.x = Math.PI / 2;
@@ -80,22 +92,13 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
 
   const markerPivot = new THREE.Group();
   orbitPivot.add(markerPivot);
-  const targetMarker = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.08, 0),
-    new THREE.MeshStandardMaterial({
-      color: 0xfbbf24,
-      emissive: 0xf59e0b,
-      emissiveIntensity: 0.6,
-      metalness: 0.7,
-      roughness: 0.25,
-    })
-  );
+  const targetMarker = _createOrbitingProbeIcon();
   targetMarker.position.x = 1.85;
   markerPivot.add(targetMarker);
 
-  sceneManager.scene.background = new THREE.Color(0x050914);
+  sceneManager.scene.background = new THREE.Color(0x050b1b);
   sceneManager.addObject(previewGroup);
-  sceneManager.setCamera(new THREE.Vector3(0, 1.4, 5.4), new THREE.Vector3(0, 0, 0));
+  sceneManager.setCamera(new THREE.Vector3(0, 1.15, 5.5), new THREE.Vector3(0.45, 0, 0));
 
   let currentModelKey = null;
 
@@ -113,6 +116,8 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
       }
       planetHolder.add(createPlanetModel(modelKey));
     }
+
+    bgEarth.visible = orbitId === "LUNAR" || String(modelKey).toLowerCase().includes("moon");
 
     const view = ORBIT_VIEW_SPECS[orbitId] || ORBIT_VIEW_SPECS.LEO;
     planetHolder.scale.setScalar(view.scale);
@@ -177,6 +182,31 @@ export function evaluateMission(gameState) {
     gameState.spacecraft,
     gameState.launch
   );
+}
+
+function _createOrbitingProbeIcon() {
+  const probe = new THREE.Group();
+  const bus = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.11, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0xff9d24,
+      emissive: 0x452200,
+      metalness: 0.65,
+      roughness: 0.25,
+    })
+  );
+  const wing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.32, 0.015, 0.07),
+    new THREE.MeshStandardMaterial({
+      color: 0x1677ff,
+      emissive: 0x19bfff,
+      emissiveIntensity: 0.35,
+      metalness: 0.5,
+      roughness: 0.25,
+    })
+  );
+  probe.add(bus, wing);
+  return probe;
 }
 
 function _createStarfield() {

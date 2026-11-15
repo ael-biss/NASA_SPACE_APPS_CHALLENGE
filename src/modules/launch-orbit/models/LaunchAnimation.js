@@ -58,7 +58,6 @@ export class LaunchAnimation {
     this._stage1Plumes = [];
     this._sideBoosterPlumes = [];
     this._stage2Plume = null;
-    this._machCone = null;
     this._rocketPlume = null; // Backwards-compatible alias for primary plume
     this._boosterGroup = null; // Backwards-compatible alias for stage 1
 
@@ -72,6 +71,11 @@ export class LaunchAnimation {
     // Particle & VFX arrays
     this._debris = [];
     this._fireballs = [];
+    this._plumeSpawnAccum = 0;
+    this._padStandRadius = 2.12;
+    this._stackScale = 0.22;
+    this._countdownTotalSec = 2.4;
+    this._countdownRemaining = 0;
     this._activePhaseIndex = -1;
     this._focusTarget = new THREE.Vector3(0, 0, 2.0);
     this._cameraShake = 0;
@@ -107,6 +111,8 @@ export class LaunchAnimation {
     this._failureHoldSec = 0;
     this._secondaryBlastOrigin = null;
     this._activePhaseIndex = -1;
+    this._countdownRemaining = this._countdownTotalSec;
+    this._plumeSpawnAccum = 0;
     this._orbitAngle =
       this._orbit?.id === "LEO"
         ? 1.82
@@ -119,18 +125,20 @@ export class LaunchAnimation {
     this._fairingSeparated = false;
     this._stage2Separated = false;
 
-    this._buildVehicleStack();
-
     if (this._spacecraft?.setSolarDeployed) {
       this._spacecraft.setSolarDeployed(false);
     }
     if (this._spacecraft?.setThrustActive) {
       this._spacecraft.setThrustActive(false);
     }
+
+    this._buildVehicleStack();
+    // Hold main engine plumes off until T-0 ignition
+    this._setBoostPlumesVisible(false);
   }
 
   setSpeed(multiplier) {
-    this.speedMultiplier = Math.max(0.5, Math.min(4, multiplier));
+    this.speedMultiplier = Math.max(0.5, Math.min(100, multiplier));
   }
 
   getGroup() {
@@ -145,7 +153,20 @@ export class LaunchAnimation {
     return this._cameraShake;
   }
 
-  /** Advance launch animation, debris physics, staging separation, and camera shake. */
+  isCountdownActive() {
+    return this.running && this._countdownRemaining > 0;
+  }
+
+  _setBoostPlumesVisible(visible) {
+    for (const plume of this._stage1Plumes) {
+      plume.visible = visible;
+    }
+    for (const plume of this._sideBoosterPlumes) {
+      plume.visible = visible;
+    }
+  }
+
+  /** Advance launch animation, countdown, plumes, debris physics, staging separation, and camera shake. */
   update(deltaTime) {
     const dt = Math.min(deltaTime, 0.08);
     this._cameraShake = Math.max(0, this._cameraShake - dt * 2.5);
@@ -166,7 +187,8 @@ export class LaunchAnimation {
 
     if (this._failureTriggered) {
       this._failureHoldSec += dt;
-      if (this._secondaryBlastOrigin && this._failureHoldSec >= 0.28 / this.speedMultiplier) {
+      const blastDelay = 0.28 / Math.min(this.speedMultiplier, 8);
+      if (this._secondaryBlastOrigin && this._failureHoldSec >= blastDelay) {
         this._spawnExplosion(this._secondaryBlastOrigin, 0.55, false);
         this._secondaryBlastOrigin = null;
       }
@@ -175,11 +197,44 @@ export class LaunchAnimation {
         this._stackGroup.rotation.z += dt * 1.4;
         this._stackGroup.rotation.x += dt * 0.9;
       }
-      if (this._failureHoldSec >= 3.0 / this.speedMultiplier) {
+      if (this._failureHoldSec >= 3.0 / Math.min(this.speedMultiplier, 8)) {
         this.running = false;
         this._onComplete?.(this._launchResult);
       }
       return;
+    }
+
+    // Pre-launch terminal countdown (T-3 .. T-2 .. T-1 -> Ignition)
+    if (this._countdownRemaining > 0) {
+      const countdownRate = Math.min(4, this.speedMultiplier);
+      this._countdownRemaining = Math.max(0, this._countdownRemaining - dt * countdownRate);
+      this._positionVehicleAlongTrajectory(0, 0);
+      this._emitCryoVentParticles(dt);
+
+      const countdownSec =
+        this._countdownRemaining > 0
+          ? Math.max(1, Math.ceil((this._countdownRemaining / this._countdownTotalSec) * 3))
+          : 0;
+      const phases = this._launchResult?.phases ?? [];
+      if (phases[0]) {
+        const snap = this._computeLiveTelemetrySnapshot(0);
+        this._onPhaseUpdate?.(0, phases[0], {
+          ...snap,
+          failed: false,
+          countdownSec,
+          altitudeKm: 0,
+          velocityKms: 0,
+          gLoad: 1.0,
+          propellantPct: 100,
+        });
+      }
+
+      if (this._countdownRemaining > 0) {
+        return;
+      }
+      // T-0 Main Engine Ignition!
+      this._setBoostPlumesVisible(true);
+      this._cameraShake = Math.max(this._cameraShake, 0.35);
     }
 
     const prevProgress = this.progress;
@@ -194,17 +249,22 @@ export class LaunchAnimation {
     );
     if (phaseIdx < 0) phaseIdx = PHASE_WINDOWS.length - 1;
 
-    // Failure interrupt
+    // Failure interrupt (for ascent G-load failures, trigger at exact computed burnout crossing)
     if (failedIdx >= 0) {
       const failWin = PHASE_WINDOWS[Math.min(failedIdx, PHASE_WINDOWS.length - 1)];
-      const triggerPoint = failWin.start + (failWin.end - failWin.start) * 0.58;
+      const failedPhase = phases[failedIdx];
+      const frac =
+        failedPhase?.id === "ascent" &&
+        typeof failedPhase?.metrics?.ascentFailureFraction === "number"
+          ? Math.max(0.15, Math.min(0.95, failedPhase.metrics.ascentFailureFraction))
+          : 0.58;
+      const triggerPoint = failWin.start + (failWin.end - failWin.start) * frac;
       if (this.progress >= triggerPoint) {
         this.progress = triggerPoint;
-        if (this._activePhaseIndex !== failedIdx) {
-          this._activePhaseIndex = failedIdx;
-          this._emitPhaseTelemetry(failedIdx);
-        }
-        this._triggerFailure(phases[failedIdx]);
+        this._activePhaseIndex = failedIdx;
+        this._positionVehicleAlongTrajectory(this.progress, failedIdx);
+        this._emitPhaseTelemetry(failedIdx);
+        this._triggerFailure(failedPhase);
         return;
       }
     }
@@ -214,13 +274,13 @@ export class LaunchAnimation {
       this._onPhaseEnter(phaseIdx);
     }
 
-    // Dynamic staging transitions within ascent phase (progress 0.28 to 0.44)
+    // Dynamic staging transitions within ascent & deployment (progress 0.33 to 0.46)
     this._handleAscentStagingSequence(this.progress);
 
     this._positionVehicleAlongTrajectory(this.progress, phaseIdx);
     this._emitPhaseTelemetry(phaseIdx);
 
-    // Dynamic plume flicker
+    // Dynamic plume flicker + exhaust stream particles
     this._animatePlumes(dt);
 
     if (this.progress >= 1 && failedIdx < 0) {
@@ -259,7 +319,6 @@ export class LaunchAnimation {
     this._stage2Plume = null;
     this._fairingLeft = null;
     this._fairingRight = null;
-    this._machCone = null;
     this._rocketPlume = null;
     this._boosterGroup = null;
 
@@ -268,6 +327,9 @@ export class LaunchAnimation {
     this._orbiting = false;
     this._failed = false;
     this._failureTriggered = false;
+    this._failureHoldSec = 0;
+    this._countdownRemaining = 0;
+    this._plumeSpawnAccum = 0;
     this._secondaryBlastOrigin = null;
     this._sideBoostersSeparated = false;
     this._stage1Separated = false;
@@ -485,10 +547,11 @@ export class LaunchAnimation {
       side: THREE.DoubleSide,
     });
 
-    const fairingH = Math.max(0.65, coreRadius * 4.2);
+    const fairingBaseR = Math.max(coreRadius * 1.18, 0.14);
+    const fairingH = Math.max(0.72, coreRadius * 4.4);
     const fairingHalfGeo = new THREE.CylinderGeometry(
       0.03,
-      coreRadius * 1.15,
+      fairingBaseR,
       fairingH,
       18,
       1,
@@ -510,31 +573,40 @@ export class LaunchAnimation {
 
     this._stage2Group.add(this._fairingLeft, this._fairingRight);
 
-    // Transonic Max-Q shock cone
-    this._machCone = new THREE.Mesh(
-      new THREE.ConeGeometry(coreRadius * 2.8, 0.75, 24, 1, true),
-      new THREE.MeshBasicMaterial({
-        color: 0xbae6fd,
-        transparent: true,
-        opacity: 0.0,
-        side: THREE.DoubleSide,
-      })
-    );
-    this._machCone.position.y = fairingCenterY;
-    this._stackGroup.add(this._machCone);
-
-    // ── 6. SPACECRAFT PAYLOAD BAY MOUNT ─────────────────────────────────────
+    // ── 6. SPACECRAFT PAYLOAD BAY MOUNT (STOWED INSIDE FAIRING) ─────────────
     if (this._spacecraftGroup) {
       this._spacecraftGroup.visible = true;
-      this._spacecraftGroup.scale.setScalar(0.24);
-      this._spacecraftGroup.position.set(0, interstageHeight + s2Height + pafHeight + 0.12, 0);
+      this._spacecraftGroup.scale.setScalar(1);
+      const stowedBox = new THREE.Box3().setFromObject(this._spacecraftGroup);
+      let stowedScale = 0.16;
+      if (!stowedBox.isEmpty()) {
+        const size = new THREE.Vector3();
+        stowedBox.getSize(size);
+        const radialSpan = Math.max(size.x, size.z, 0.25) / 2;
+        const heightSpan = Math.max(size.y, 0.25);
+        stowedScale = Math.min(
+          0.22,
+          (fairingBaseR * 0.68) / radialSpan,
+          (fairingH * 0.62) / heightSpan
+        );
+      }
+      this._stowedSpacecraftScale = Math.max(0.06, stowedScale);
+      this._spacecraftGroup.scale.setScalar(this._stowedSpacecraftScale);
+      this._spacecraftGroup.position.set(
+        0,
+        interstageHeight + s2Height + pafHeight + fairingH * 0.3,
+        0
+      );
       this._stage2Group.add(this._spacecraftGroup);
     }
 
     const frame = this._getCurrentSiteFrame();
-    const padStandRadius = (frame.earthRadius ?? 1.8) + 0.42;
-    this._stackGroup.scale.setScalar(0.55);
-    this._stackGroup.position.copy(frame.up).multiplyScalar(padStandRadius);
+    const nozzleHeight = (clusterSpec.nozzleRadius ?? 0.024) * 2.6;
+    this._stackScale = 0.22;
+    this._padStandRadius =
+      (frame.earthRadius ?? 1.8) + 0.024 + (s1Height + nozzleHeight * 0.72) * this._stackScale;
+    this._stackGroup.scale.setScalar(this._stackScale);
+    this._stackGroup.position.copy(frame.up).multiplyScalar(this._padStandRadius);
     this._alignVehicleToAxes(frame.up, frame.heading);
     this._focusTarget.copy(this._stackGroup.position);
     this.root.add(this._stackGroup);
@@ -595,15 +667,6 @@ export class LaunchAnimation {
     return t * t * (3 - 2 * t);
   }
 
-  _onPhaseEnter(phaseIdx) {
-    if (phaseIdx === 2 && this._boosterGroup) {
-      // Stage separation: detach booster into tumbling debris
-      const worldPos = new THREE.Vector3();
-      this._boosterGroup.getWorldPosition(worldPos);
-      this._boosterGroup.visible = false;
-      this._spawnPartChunk(worldPos, new THREE.Vector3(-0.3, -0.8, 0.2), 0xe2e8f0, 0.24);
-    }
-  }
   /** Build realistic engine nozzle clusters */
   _buildEngineCluster(clusterSpec, radius) {
     const group = new THREE.Group();
@@ -727,26 +790,141 @@ export class LaunchAnimation {
     return group;
   }
 
-  /** Animate plume flickering */
+  /** Animate plume flickering and emit glowing exhaust particle puffs */
   _animatePlumes(dt) {
     const jitter = 0.92 + Math.random() * 0.16;
+    const activePlumes = [];
     for (const plume of this._stage1Plumes) {
       if (plume.visible) {
         plume.scale.set(1, jitter, 1);
+        activePlumes.push({ plume, color: 0xfb923c, isVacuum: false });
       }
     }
     for (const plume of this._sideBoosterPlumes) {
       if (plume.visible) {
         plume.scale.set(1, jitter, 1);
+        activePlumes.push({ plume, color: 0xfef08a, isVacuum: false });
       }
     }
     if (this._stage2Plume?.visible) {
       const vacJitter = 0.95 + Math.random() * 0.1;
       this._stage2Plume.scale.set(vacJitter, vacJitter, vacJitter);
+      activePlumes.push({ plume: this._stage2Plume, color: 0x38bdf8, isVacuum: true });
+    }
+
+    if (activePlumes.length === 0) return;
+    this._plumeSpawnAccum += dt * Math.min(this.speedMultiplier, 8);
+    if (this._plumeSpawnAccum < 0.045) return;
+    this._plumeSpawnAccum = 0;
+
+    for (const { plume, color, isVacuum } of activePlumes) {
+      this._emitPlumeParticles(plume, color, isVacuum);
     }
   }
 
-  /** Sequence staging events (Side Boosters, Stage 1 MECO, Stage 2 Ignition, Fairings) */
+  _emitCryoVentParticles(dt) {
+    if (!this._stackGroup) return;
+    this._plumeSpawnAccum += dt;
+    if (this._plumeSpawnAccum < 0.14) return;
+    this._plumeSpawnAccum = 0;
+
+    const frame = this._getCurrentSiteFrame();
+    const ventOrigin = this._stackGroup.position.clone().addScaledVector(frame.up, 0.08);
+    this._spawnParticleStream(ventOrigin, frame.heading, 0xe0f2fe, 6, 0.25, 0.035, 0.55);
+  }
+
+  _emitPlumeParticles(plume, color, isVacuum) {
+    if (!this._stackGroup) return;
+    plume.updateMatrixWorld(true);
+    const origin = new THREE.Vector3();
+    plume.getWorldPosition(origin);
+    const aftDir = new THREE.Vector3(0, -1, 0)
+      .applyQuaternion(this._stackGroup.quaternion)
+      .normalize();
+    this._spawnParticleStream(
+      origin,
+      aftDir,
+      color,
+      isVacuum ? 6 : 10,
+      isVacuum ? 0.9 : 1.4,
+      isVacuum ? 0.045 : 0.06,
+      isVacuum ? 0.35 : 0.45
+    );
+  }
+
+  _spawnParticleStream(origin, dir, color, count, speed, size, maxAge) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const velocities = [];
+    const spread = speed * 0.35;
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = origin.x + (Math.random() - 0.5) * 0.03;
+      pos[i * 3 + 1] = origin.y + (Math.random() - 0.5) * 0.03;
+      pos[i * 3 + 2] = origin.z + (Math.random() - 0.5) * 0.03;
+      const spd = speed * (0.7 + Math.random() * 0.6);
+      velocities.push(
+        new THREE.Vector3(
+          dir.x * spd + (Math.random() - 0.5) * spread,
+          dir.y * spd + (Math.random() - 0.5) * spread,
+          dir.z * spd + (Math.random() - 0.5) * spread
+        )
+      );
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color,
+      size,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.name = "engine-plume-particles";
+    this.root.add(points);
+    this._debris.push({
+      mesh: points,
+      velocities,
+      age: 0,
+      maxAge,
+      isPoints: true,
+    });
+  }
+
+  _getVehicleAxes() {
+    const q = this._stackGroup?.quaternion ?? new THREE.Quaternion();
+    return {
+      right: new THREE.Vector3(1, 0, 0).applyQuaternion(q).normalize(),
+      up: new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize(),
+      fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize(),
+    };
+  }
+
+  _detachToSeparatingParts(part, currentParent, vel, rotVel, maxAge) {
+    part.updateMatrixWorld(true);
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    part.getWorldPosition(worldPos);
+    part.getWorldQuaternion(worldQuat);
+    part.getWorldScale(worldScale);
+
+    currentParent.remove(part);
+    part.position.copy(this.root.worldToLocal(worldPos));
+    part.quaternion.copy(worldQuat);
+    part.scale.copy(worldScale);
+    this.root.add(part);
+
+    this._separatingParts.push({
+      mesh: part,
+      vel,
+      rotVel,
+      age: 0,
+      maxAge,
+    });
+  }
+
+  /** Sequence staging events (Side Boosters, Stage 1 MECO, Fairings, Stage 2 Deployment) */
   _handleAscentStagingSequence(p) {
     // 1. Side Boosters separation at progress ~0.33
     if (p >= 0.33 && !this._sideBoostersSeparated && this._sideBoosterGroups.length > 0) {
@@ -765,98 +943,115 @@ export class LaunchAnimation {
       this._fairingSeparated = true;
       this._separateFairings();
     }
+
+    // 4. Upper-stage SECO & Spacecraft separation at deployment (~0.45)
+    if (p >= 0.45 && !this._stage2Separated && this._stage2Group) {
+      this._stage2Separated = true;
+      this._separateStage2();
+    }
   }
 
-  /** Separate side boosters into realistic outward Korolev cross */
+  /** Separate side boosters outward laterally & aft in vehicle frame */
   _separateSideBoosters() {
     for (const plume of this._sideBoosterPlumes) {
       plume.visible = false;
     }
+    const { right, up, fwd } = this._getVehicleAxes();
     this._sideBoosterGroups.forEach((booster, idx) => {
       const dir = idx === 0 ? -1 : 1;
-      const worldPos = new THREE.Vector3();
-      const worldQuat = new THREE.Quaternion();
-      booster.getWorldPosition(worldPos);
-      booster.getWorldQuaternion(worldQuat);
-
-      this._stage1Group.remove(booster);
-      booster.position.copy(worldPos);
-      booster.quaternion.copy(worldQuat);
-      this.root.add(booster);
-
-      // Peel outwards and push backward
-      this._separatingParts.push({
-        mesh: booster,
-        vel: new THREE.Vector3(dir * 0.65, -0.75, 0.25),
-        rotVel: new THREE.Vector3(0, 0, dir * 0.4),
-        age: 0,
-        maxAge: 4.5,
-      });
+      const vel = right
+        .clone()
+        .multiplyScalar(dir * 0.42)
+        .addScaledVector(up, -0.55)
+        .addScaledVector(fwd, 0.12);
+      this._detachToSeparatingParts(
+        booster,
+        this._stage1Group,
+        vel,
+        new THREE.Vector3(0.15, 0, dir * 0.45),
+        4.5
+      );
     });
     this._sideBoosterGroups = [];
   }
 
-  /** Stage 1 MECO, separation, and Stage 2 ignition */
+  /** Stage 1 MECO, separation along vehicle aft axis, and Stage 2 ignition */
   _separateStage1() {
     for (const plume of this._stage1Plumes) {
       plume.visible = false;
     }
 
-    const worldPos = new THREE.Vector3();
-    const worldQuat = new THREE.Quaternion();
-    this._stage1Group.getWorldPosition(worldPos);
-    this._stage1Group.getWorldQuaternion(worldQuat);
-
-    this._stackGroup.remove(this._stage1Group);
-    this._stage1Group.position.copy(worldPos);
-    this._stage1Group.quaternion.copy(worldQuat);
-    this.root.add(this._stage1Group);
-
-    // Tumbling booster falls back towards Earth
-    this._separatingParts.push({
-      mesh: this._stage1Group,
-      vel: new THREE.Vector3(-0.15, -0.85, 0.1),
-      rotVel: new THREE.Vector3(0.2, 0.1, -0.3),
-      age: 0,
-      maxAge: 6.0,
-    });
+    const { right, up } = this._getVehicleAxes();
+    const stageOrigin = new THREE.Vector3();
+    this._stage1Group.getWorldPosition(stageOrigin);
+    const vel = up.clone().multiplyScalar(-0.65).addScaledVector(right, -0.08);
+    this._detachToSeparatingParts(
+      this._stage1Group,
+      this._stackGroup,
+      vel,
+      new THREE.Vector3(0.2, 0.1, -0.35),
+      6.0
+    );
 
     // Stage 2 Ignition!
     if (this._stage2Plume) {
       this._stage2Plume.visible = true;
     }
-    // Small interstage visual gas puff
-    this._spawnSparkBurst(worldPos, 0x94a3b8, 16);
+    // Small interstage separation cold-gas puff
+    this._spawnSparkBurst(stageOrigin, 0x94a3b8, 16);
   }
 
   /** Clamshell fairing separation revealing the spacecraft */
   _separateFairings() {
     if (!this._fairingLeft || !this._fairingRight) return;
 
+    const { right, up, fwd } = this._getVehicleAxes();
     [-1, 1].forEach((dir) => {
       const fairing = dir === -1 ? this._fairingLeft : this._fairingRight;
       fairing.visible = true;
-      const worldPos = new THREE.Vector3();
-      const worldQuat = new THREE.Quaternion();
-      fairing.getWorldPosition(worldPos);
-      fairing.getWorldQuaternion(worldQuat);
-
-      this._stage2Group.remove(fairing);
-      fairing.position.copy(worldPos);
-      fairing.quaternion.copy(worldQuat);
-      this.root.add(fairing);
-
-      this._separatingParts.push({
-        mesh: fairing,
-        vel: new THREE.Vector3(dir * 1.1, 0.25, 0.35),
-        rotVel: new THREE.Vector3(0.5, dir * 0.6, 0.2),
-        age: 0,
-        maxAge: 5.0,
-      });
+      const vel = right
+        .clone()
+        .multiplyScalar(dir * 0.65)
+        .addScaledVector(up, -0.15)
+        .addScaledVector(fwd, 0.2);
+      this._detachToSeparatingParts(
+        fairing,
+        this._stage2Group,
+        vel,
+        new THREE.Vector3(0.5, dir * 0.6, 0.2),
+        5.0
+      );
     });
 
     this._fairingLeft = null;
     this._fairingRight = null;
+  }
+
+  /** Upper-stage SECO separation cleanly releasing the spacecraft */
+  _separateStage2() {
+    if (this._stage2Plume) {
+      this._stage2Plume.visible = false;
+    }
+    if (this._spacecraftGroup && this._stackGroup && this._stage2Group.children.includes(this._spacecraftGroup)) {
+      this._stage2Group.remove(this._spacecraftGroup);
+      this._spacecraftGroup.position.set(0, 0.15, 0);
+      this._spacecraftGroup.scale.setScalar(Math.max(0.22, (this._stowedSpacecraftScale ?? 0.16) * 1.45));
+      this._stackGroup.add(this._spacecraftGroup);
+    }
+
+    const { right, up } = this._getVehicleAxes();
+    const stageOrigin = new THREE.Vector3();
+    this._stage2Group.getWorldPosition(stageOrigin);
+    const vel = up.clone().multiplyScalar(-0.42).addScaledVector(right, 0.08);
+    this._detachToSeparatingParts(
+      this._stage2Group,
+      this._stackGroup,
+      vel,
+      new THREE.Vector3(-0.18, 0.22, 0.12),
+      5.5
+    );
+    this._stage2Group = null;
+    this._spawnSparkBurst(stageOrigin, 0x38bdf8, 14);
   }
 
   /** Update detached stages and fairing halves drifting through space */
@@ -883,6 +1078,10 @@ export class LaunchAnimation {
       if (this._stage2Plume) {
         this._stage2Plume.visible = false;
       }
+      if (!this._stage2Separated && this._stage2Group) {
+        this._stage2Separated = true;
+        this._separateStage2();
+      }
       if (this._spacecraft?.setSolarDeployed) {
         this._spacecraft.setSolarDeployed(true);
       }
@@ -901,10 +1100,8 @@ export class LaunchAnimation {
 
     const frame = this._getCurrentSiteFrame();
     const { up: u0, heading } = frame;
-    const padStandRadius = (frame.earthRadius ?? 1.8) + 0.42;
+    const padStandRadius = this._padStandRadius ?? (frame.earthRadius ?? 1.8) + 0.34;
     const leoRadius = 3.0;
-    const targetRadius = this._orbit?.orbitRadius3D ?? 3.0;
-    const isDeep = this._orbit?.id === "LUNAR" || this._orbit?.id === "MARS";
     const deployAngle = 0.72;
 
     const leoDeparture = u0
@@ -918,7 +1115,6 @@ export class LaunchAnimation {
       .normalize();
 
     // Ascent from KSC LC-39A pad (vertical liftoff -> eastward gravity turn into LEO plane)
-    // Ascent from Earth surface (z=1.92) to LEO parking orbit (z=3.0) during phases 0..2
     if (progress < 0.44) {
       const t = progress / 0.44;
       const radialGain = Math.pow(t, 0.85);
@@ -946,13 +1142,8 @@ export class LaunchAnimation {
         .addScaledVector(tangent, Math.sin(pitchAngle))
         .normalize();
       this._alignVehicleToAxes(noseDir, radial);
-
-      if (this._machCone) {
-        this._machCone.material.opacity = phaseIdx === 1 ? 0.38 : 0.0;
-      }
     } else if (progress < 0.58) {
       // LEO parking coast & deployment along KSC orbital plane (0.48 -> 0.72 rad)
-      if (this._machCone) this._machCone.material.opacity = 0;
       const t = (progress - 0.44) / 0.14;
       const angle = 0.48 + t * (deployAngle - 0.48);
       const radial = u0
@@ -968,37 +1159,18 @@ export class LaunchAnimation {
 
       this._stackGroup.position.copy(radial).multiplyScalar(leoRadius);
       this._alignVehicleToAxes(tangent, radial);
-    } else if (isDeep) {
-      // Outbound transfer & cruise from LEO departure point to Moon or Mars capture ring
-      const t = (progress - 0.58) / 0.42;
-      const p1 = leoDeparture.clone().addScaledVector(leoDepartureDir, targetRadius * 0.35);
-      p1.x = Math.max(p1.x, targetRadius * 0.42);
-      const p2 = new THREE.Vector3(targetRadius * 0.78, 0.35, -0.95);
-      const destR = this._orbit.id === "MARS" ? 1.6 : 1.37;
-      const p3 = new THREE.Vector3(targetRadius, 0, -destR);
-
-      const pos = this._sampleCatmull(leoDeparture, p1, p2, p3, t);
-      this._stackGroup.position.copy(pos);
-      const nextPos = this._sampleCatmull(leoDeparture, p1, p2, p3, Math.min(1, t + 0.02));
-      const travelDir = nextPos.clone().sub(pos);
-      if (travelDir.lengthSq() > 1e-6) {
-        this._alignVehicleToAxes(travelDir.normalize(), pos);
-      }
     } else if (this._orbit?.id !== "LEO") {
-      // MEO / GEO transfer arc from LEO departure point to target orbit ring
-      const t = (progress - 0.58) / 0.42;
-      const p1 = leoDeparture
-        .clone()
-        .addScaledVector(leoDepartureDir, targetRadius * 0.45)
-        .setLength(targetRadius * 0.76);
-      const p2 = new THREE.Vector3(targetRadius, 0, 0);
-      const curve = new THREE.CatmullRomCurve3([leoDeparture, p1, p2]);
-      const pos = curve.getPoint(Math.max(0, Math.min(1, t)));
-      const nextPos = curve.getPoint(Math.max(0, Math.min(1, t + 0.02)));
-      this._stackGroup.position.copy(pos);
-      const travelDir = nextPos.clone().sub(pos);
-      if (travelDir.lengthSq() > 1e-6) {
-        this._alignVehicleToAxes(travelDir.normalize(), pos);
+      // Follow exact loop-free transfer trajectory computed by PlanetScene
+      const t = Math.max(0, Math.min(1, (progress - 0.58) / 0.42));
+      const curve = PlanetScene.computeTransferCurve(this._orbit, leoDeparture, leoDepartureDir);
+      if (curve) {
+        const pos = curve.getPoint(t);
+        const nextPos = curve.getPoint(Math.min(1, t + 0.02));
+        this._stackGroup.position.copy(pos);
+        const travelDir = nextPos.clone().sub(pos);
+        if (travelDir.lengthSq() > 1e-6) {
+          this._alignVehicleToAxes(travelDir.normalize(), pos);
+        }
       }
     } else {
       // LEO stabilization along site orbital plane
@@ -1019,11 +1191,6 @@ export class LaunchAnimation {
     }
 
     this._focusTarget.copy(this._stackGroup.position);
-  }
-
-  _sampleCatmull(p0, p1, p2, p3, t) {
-    const curve = new THREE.CatmullRomCurve3([p0, p1, p2, p3]);
-    return curve.getPoint(Math.max(0, Math.min(1, t)));
   }
 
   _updateContinuousOrbit(dt) {
@@ -1077,9 +1244,11 @@ export class LaunchAnimation {
     this._failureTriggered = true;
 
     const mode = this._launchResult?.failureMode || "explosion";
+    const liveSnapshot = this._computeLiveTelemetrySnapshot(this._activePhaseIndex);
     if (mode === "insufficient-science" || mode === "science-warning") {
       this._cameraShake = 0;
       this._onPhaseUpdate?.(this._activePhaseIndex, failedPhase, {
+        ...liveSnapshot,
         failed: false,
         warning: true,
         failureMode: mode,
@@ -1141,6 +1310,7 @@ export class LaunchAnimation {
     }
 
     this._onPhaseUpdate?.(this._activePhaseIndex, failedPhase, {
+      ...liveSnapshot,
       failed: true,
       failureMode: mode,
     });
@@ -1266,35 +1436,7 @@ export class LaunchAnimation {
       this._fireballs.push({ mesh: ring, age: 0, maxAge: 0.9, growRate: 7.5 * scale });
     }
 
-    // 4. Lingering dark smoke / soot puffs
-    if (includeSmoke) {
-      for (let i = 0; i < 6; i++) {
-        const smoke = new THREE.Mesh(
-          new THREE.SphereGeometry((0.15 + Math.random() * 0.08) * scale, 12, 10),
-          new THREE.MeshBasicMaterial({
-            color: i % 2 === 0 ? 0x1e293b : 0x334155,
-            transparent: true,
-            opacity: 0.55,
-          })
-        );
-        smoke.position.copy(origin).add(
-          new THREE.Vector3(
-            (Math.random() - 0.5) * 0.25 * scale,
-            (Math.random() - 0.5) * 0.25 * scale,
-            (Math.random() - 0.5) * 0.25 * scale
-          )
-        );
-        this.root.add(smoke);
-        this._fireballs.push({
-          mesh: smoke,
-          age: 0,
-          maxAge: 2.1 + Math.random() * 0.5,
-          growRate: (2.2 + Math.random() * 1.1) * scale,
-        });
-      }
-    }
-
-    this._spawnSparkBurst(origin, 0xf97316, includeSmoke ? 54 : 26);
+    this._spawnSparkBurst(origin, 0xf97316, includeSmoke ? 68 : 28);
   }
 
   _spawnSparkBurst(origin, color, count = 32) {
@@ -1423,35 +1565,125 @@ export class LaunchAnimation {
     }
   }
 
-  _emitPhaseTelemetry(phaseIdx) {
+  _computeLiveTelemetrySnapshot(phaseIdx) {
     const phases = this._launchResult?.phases ?? [];
     const phase = phases[phaseIdx];
-    if (!phase) return;
-
-    const stages = this._launchResult?.missionStats?.stages ?? [];
+    const stats = this._launchResult?.missionStats ?? {};
+    const stages = stats.stages ?? [];
     const stage1 = stages[0];
     const stage2 = stages[1];
+    const orbitId = this._orbit?.id ?? "LEO";
+    const targetCruiseAlt = this._orbit?.altitudeKm ?? 500;
+    const p = Math.max(0.005, Math.min(1, this.progress || 0.005));
 
-    const altitudes = [12, 38, 190, 500, 3200, this._orbit?.altitudeKm * 0.5 || 15000, this._orbit?.altitudeKm || 500];
-    const velocities = [0.6, 1.8, 7.2, 7.62, 10.4, 3.8, 1.6];
+    let altitudeKm = 1;
+    let velocityKms = 0.08;
+    let propellantPct = 100;
+    let gLoad = stats.twr ?? 1.3;
+    let activeStageText = stage1?.name ?? "Stage 1 (Booster)";
 
-    let activeStageText = "Stage 1 (Booster)";
-    if (this.progress >= 0.44) {
-      activeStageText = "Spacecraft Bus";
-    } else if (this.progress >= 0.37) {
-      activeStageText = stage2?.name ?? "Stage 2 (Upper Stage)";
-    } else if (this._sideBoostersSeparated) {
-      activeStageText = "Core Booster (Center)";
+    if (p <= 0.44) {
+      const u = Math.max(0.015, p / 0.44);
+      altitudeKm = Math.max(1, Math.round(500 * Math.pow(u, 1.85)));
+      velocityKms = Number(Math.max(0.08, 7.62 * Math.pow(u, 1.12)).toFixed(2));
+      propellantPct = Math.max(32, Math.round(100 - u * 68));
+
+      const curve = Array.isArray(stats.ascentGCurve) ? stats.ascentGCurve : [];
+      if (curve.length > 0) {
+        const ascentFrac = Math.max(0, Math.min(1, (p - 0.14) / 0.30));
+        let nearest = curve[0];
+        for (const s of curve) {
+          if (s.fraction <= ascentFrac) nearest = s;
+        }
+        gLoad = p < 0.14 ? Number((1.25 + (p / 0.14) * 1.1).toFixed(2)) : nearest.gLoad;
+      }
+
+      if (p >= 0.37) {
+        activeStageText = stage2?.name ?? "Stage 2 (Upper Stage)";
+      } else if (this._sideBoostersSeparated) {
+        activeStageText = "Core Booster (Center)";
+      }
+    } else if (p <= 0.58) {
+      altitudeKm = 500;
+      velocityKms = 7.62;
+      propellantPct = 32;
+      gLoad = 0.0;
+      activeStageText = "Spacecraft Bus (LEO Coast)";
+    } else {
+      const u = (p - 0.58) / 0.42;
+      const isDeep = orbitId === "LUNAR" || orbitId === "MARS";
+      const captureVel =
+        orbitId === "MARS"
+          ? 3.36
+          : orbitId === "LUNAR"
+            ? 1.68
+            : orbitId === "GEO"
+              ? 3.07
+              : orbitId === "MEO"
+                ? 3.87
+                : 7.62;
+      const peakTransferVel =
+        orbitId === "MARS" ? 11.4 : orbitId === "LUNAR" ? 10.8 : orbitId === "GEO" ? 10.1 : orbitId === "MEO" ? 9.4 : 7.62;
+
+      if (orbitId === "LEO") {
+        altitudeKm = 500;
+        velocityKms = 7.62;
+      } else if (u < 0.35) {
+        const t = u / 0.35;
+        altitudeKm = Math.round(500 + (targetCruiseAlt * 0.12) * t);
+        velocityKms = Number((7.62 + (peakTransferVel - 7.62) * t).toFixed(2));
+      } else if (u < 0.72) {
+        const t = (u - 0.35) / 0.37;
+        altitudeKm = Math.round(500 + targetCruiseAlt * (0.12 + 0.88 * t));
+        velocityKms = Number((peakTransferVel - (peakTransferVel - (isDeep ? 3.8 : captureVel + 0.5)) * t).toFixed(2));
+      } else {
+        const t = (u - 0.72) / 0.28;
+        const finalAlt = isDeep ? this._orbit?.targetOrbitAltitudeKm ?? 100 : targetCruiseAlt;
+        altitudeKm = Math.round(targetCruiseAlt + (finalAlt - targetCruiseAlt) * t);
+        const midVel = isDeep ? 3.8 : captureVel + 0.5;
+        velocityKms = Number((midVel + (captureVel - midVel) * t).toFixed(2));
+      }
+
+      const finalReserve =
+        stats.totalDeltaVMs > 0
+          ? Math.max(4, Math.min(28, Math.round(((stats.totalDeltaVMs - (stats.requiredDeltaVMs ?? 0)) / stats.totalDeltaVMs) * 100 + 8)))
+          : 12;
+      propellantPct = Math.max(4, Math.round(32 - (32 - finalReserve) * u));
+      gLoad = p >= 0.58 && p < 0.72 ? 0.85 : p >= 0.88 ? 0.65 : 0.0;
+      activeStageText = "Spacecraft Propulsion";
     }
 
-    this._onPhaseUpdate?.(phaseIdx, phase, {
-      failed: false,
-      altitudeKm: Math.round(altitudes[phaseIdx] ?? 500),
-      velocityKms: Number((velocities[phaseIdx] ?? 7.6).toFixed(2)),
+    return {
+      phase,
+      altitudeKm,
+      velocityKms,
+      propellantPct,
+      gLoad: Number(Number(gLoad).toFixed(2)),
+      maxAllowableG: Number((stats.maxAllowableG ?? 8.0).toFixed(1)),
+      countdownSec: 0,
       progress: this.progress,
       activeStage: activeStageText,
       stage1DeltaV: stage1?.deltaVMs ?? 0,
       stage2DeltaV: stage2?.deltaVMs ?? 0,
+    };
+  }
+
+  _emitPhaseTelemetry(phaseIdx) {
+    const snapshot = this._computeLiveTelemetrySnapshot(phaseIdx);
+    if (!snapshot.phase) return;
+
+    this._onPhaseUpdate?.(phaseIdx, snapshot.phase, {
+      failed: false,
+      altitudeKm: snapshot.altitudeKm,
+      velocityKms: snapshot.velocityKms,
+      propellantPct: snapshot.propellantPct,
+      gLoad: snapshot.gLoad,
+      maxAllowableG: snapshot.maxAllowableG,
+      countdownSec: snapshot.countdownSec,
+      progress: snapshot.progress,
+      activeStage: snapshot.activeStage,
+      stage1DeltaV: snapshot.stage1DeltaV,
+      stage2DeltaV: snapshot.stage2DeltaV,
     });
   }
 

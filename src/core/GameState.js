@@ -10,6 +10,7 @@ export class GameState {
     this.mission = null;
     this.spacecraft = null;
     this.launch = null;
+    this.pendingLaunchCostMillions = 0;
     this.phase = "mission"; // "mission" | "spacecraft" | "launch" | "results"
     this._listeners = new Set();
   }
@@ -46,6 +47,19 @@ export class GameState {
   /** @param {import('../shared/interfaces/LaunchResult.js').LaunchResult} launchResult */
   setLaunch(launchResult) {
     this.launch = launchResult;
+    this.pendingLaunchCostMillions = 0;
+    this._notify();
+  }
+
+  /**
+   * Store the previewed launch vehicle + fairing cost before a launch is executed
+   * so the ResourceHUD stays reconciled with LaunchControlPanel without faking a LaunchResult.
+   * @param {number} costMillions
+   */
+  setPendingLaunchCost(costMillions) {
+    const next = typeof costMillions === "number" && Number.isFinite(costMillions) ? Math.max(0, costMillions) : 0;
+    if (Math.abs(next - this.pendingLaunchCostMillions) < 1e-6) return;
+    this.pendingLaunchCostMillions = next;
     this._notify();
   }
 
@@ -60,6 +74,7 @@ export class GameState {
     this.mission = null;
     this.spacecraft = null;
     this.launch = null;
+    this.pendingLaunchCostMillions = 0;
     this.phase = "mission";
     this._notify();
   }

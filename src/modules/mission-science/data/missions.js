@@ -40,6 +40,13 @@ export const MISSIONS = [
     requiredDownlinkDataRate: 8,
     missionDistance: 384400,
     realReferenceMassKg: 1916,
+    realReference: {
+      name: "NASA LRO (2009)",
+      massKg: 1916,
+      orbitLabel: "50 km Lunar Polar Orbit",
+      costMillions: 504,
+      launcher: "Atlas V 401",
+    },
   },
 
   // --------------------------------------------------
@@ -79,6 +86,13 @@ export const MISSIONS = [
     requiredDownlinkDataRate: 5,
     missionDistance: 225000000,
     realReferenceMassKg: 2454,
+    realReference: {
+      name: "NASA MAVEN (2013)",
+      massKg: 2454,
+      orbitLabel: "Mars Elliptical Polar",
+      costMillions: 671,
+      launcher: "Atlas V 401",
+    },
   },
 
   // --------------------------------------------------
@@ -112,6 +126,13 @@ export const MISSIONS = [
     requiredDownlinkDataRate: 10,
     missionDistance: 500,
     realReferenceMassKg: 950,
+    realReference: {
+      name: "Landsat 1 (1972)",
+      massKg: 953,
+      orbitLabel: "900 km Polar LEO",
+      costMillions: 120,
+      launcher: "Delta 0900",
+    },
   },
 
   // --------------------------------------------------
@@ -144,6 +165,13 @@ export const MISSIONS = [
     requiredDownlinkDataRate: 15,
     missionDistance: 35786,
     realReferenceMassKg: 1450,
+    realReference: {
+      name: "GOES-16 / NOAA (2016)",
+      massKg: 2857,
+      orbitLabel: "35,786 km Geostationary",
+      costMillions: 540,
+      launcher: "Atlas V 541",
+    },
   },
 
   // --------------------------------------------------
@@ -176,6 +204,13 @@ export const MISSIONS = [
     requiredDownlinkDataRate: 5,
     missionDistance: 20200,
     realReferenceMassKg: 660,
+    realReference: {
+      name: "Van Allen Probes (2012)",
+      massKg: 662,
+      orbitLabel: "600×30,600 km MEO",
+      costMillions: 343,
+      launcher: "Atlas V 401",
+    },
   },
 ];
 

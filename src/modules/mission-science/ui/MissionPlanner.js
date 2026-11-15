@@ -1,15 +1,41 @@
 /**
  * @file src/modules/mission-science/ui/MissionPlanner.js
  * @owner Member 1 (Mission & Science)
- * @goal Interactive UI panel allowing players to choose a realistic NASA mission scenario
- *       and select scientific payload instruments while seeing budget, mass, and science trade-offs.
+ * @goal Immersive planetary mission selection screen with progressive disclosure:
+ *       clean level-like mission cards on the left, unobstructed 3D planetary diorama in center,
+ *       and a compact mission briefing + expandable technical specs on the bottom right.
  */
 
 import { getMissions } from "../data/missions.js";
 import { getInstruments } from "../data/instruments.js";
-import { validateMissionSpec } from "../../../shared/interfaces/MissionSpec.js";
 
 const STYLE_ELEMENT_ID = "mission-planner-styles";
+
+const MISSION_CATEGORIES = {
+  MISSION_LUNAR_ORBIT: "Lunar Exploration",
+  MISSION_MARS_ORBIT: "Deep Space",
+  MISSION_EARTH_LEO: "Earth Observation",
+  MISSION_WEATHER_GEO: "Climate & Weather",
+  MISSION_EARTH_SPACE_WEATHER: "Space Weather",
+};
+
+const OBJECTIVE_LABELS = {
+  OBJ_GEOLOGICAL_MAPPING: "Geological Mapping",
+  OBJ_ICE_DETECTION: "Water Ice Detection",
+  OBJ_MINERAL_ANALYSIS: "Mineral Analysis",
+  OBJ_SUBSURFACE_MAPPING: "Subsurface Radar Mapping",
+  OBJ_SURFACE_TOPOGRAPHY: "Surface Topography",
+  OBJ_THERMAL_MAPPING: "Thermal Mapping",
+  OBJ_MAGNETIC_FIELD: "Magnetic Field Survey",
+  OBJ_SOLAR_WIND_INTERACTION: "Solar Wind Interaction",
+  OBJ_RADIATION_ENVIRONMENT: "Radiation Belt Mapping",
+  OBJ_ATMOSPHERIC_STUDY: "Atmospheric Study",
+  OBJ_CHEMICAL_COMPOSITION: "Chemical Composition",
+  OBJ_SURFACE_IMAGING: "High-Res Surface Imaging",
+  OBJ_SURFACE_COMPOSITION: "Surface Composition",
+  OBJ_CLOUD_OBSERVATION: "Global Cloud Tracking",
+  OBJ_SPACE_ENVIRONMENT: "Space Environment Monitoring",
+};
 
 export class MissionPlanner {
   /**
@@ -227,7 +253,20 @@ export class MissionPlanner {
     });
   }
 
-  /** Re-render the current mission and instrument selection. */
+  _difficultyMeta(difficultyStr) {
+    const lower = String(difficultyStr ?? "").toLowerCase();
+    if (lower.includes("hard")) return { label: "Hard", cls: "oc-diff-hard" };
+    if (lower.includes("easy")) return { label: "Easy", cls: "oc-diff-easy" };
+    return { label: "Medium", cls: "oc-diff-med" };
+  }
+
+  _shortObjective(mission) {
+    const desc = String(mission.description ?? "").trim();
+    const firstSentence = desc.split(/\.(?=\s|$)/)[0];
+    return firstSentence ? `${firstSentence}.` : "";
+  }
+
+  /** Re-render the adventure-style mission selection screen. */
   render() {
     const mission = this.getSelectedMission();
     if (!mission) {
@@ -235,17 +274,14 @@ export class MissionPlanner {
       return;
     }
 
-    const totals = this.getInstrumentTotals();
-    const scienceSatisfied = totals.science >= mission.minScienceScore;
-    const hasInstruments = totals.count > 0;
-    const budgetRemaining = mission.budgetCap - totals.cost;
-    const recommendedSet = new Set(mission.recommendedInstrumentIds ?? []);
-
     const missionCards = this.missions
       .map((item) => {
         const selected = item.id === this.selectedMissionId;
         const title = item.name ?? item.title ?? item.id;
         const destination = item.destination ?? item.target ?? "Space";
+        const diff = this._difficultyMeta(item.difficulty);
+        const category = MISSION_CATEGORIES[item.id] ?? "Space Exploration";
+        const shortObj = this._shortObjective(item);
 
         return `
           <button
@@ -256,111 +292,80 @@ export class MissionPlanner {
           >
             <div class="mp-card-top">
               <strong>${this.escapeHTML(title)}</strong>
-              <span class="mp-pill">${this.escapeHTML(item.difficulty ?? this.getTargetOrbitId(item))}</span>
+              <span class="mp-pill ${diff.cls}">${diff.label}</span>
             </div>
-            <p class="mp-ref">${this.escapeHTML(item.nasaReference ?? "")}</p>
-            <p class="mp-desc">${this.escapeHTML(item.description)}</p>
-            <div class="mp-chips">
-              <span>Target: ${this.escapeHTML(destination)}</span>
-              <span>Orbit: ${this.escapeHTML(item.targetOrbit)}</span>
-              <span>Dist: ${item.missionDistance.toLocaleString()} km</span>
-              <span>Budget: $${item.budgetCap}M</span>
-              <span>Science: ${item.minScienceScore}+ pts</span>
+            <div class="mp-meta-line">
+              <span class="mp-dest">${this.escapeHTML(destination)}</span>
+              <span class="mp-cat">${this.escapeHTML(category)}</span>
+            </div>
+            <p class="mp-desc">${this.escapeHTML(shortObj)}</p>
+            <div class="mp-card-footer">
+              <span class="mp-reward">★ ${item.minScienceScore}+ Science Pts</span>
+              <span class="mp-select-tag">${selected ? "Selected" : "Select Mission"}</span>
             </div>
           </button>
         `;
       })
       .join("");
 
-    const orderedInstruments = [...this.instruments].sort((a, b) => {
-      const aComp = this.isCompatible(a, mission) ? 0 : 1;
-      const bComp = this.isCompatible(b, mission) ? 0 : 1;
-      if (aComp !== bComp) return aComp - bComp;
-      const aRec = recommendedSet.has(a.id) ? 0 : 1;
-      const bRec = recommendedSet.has(b.id) ? 0 : 1;
-      return aRec - bRec;
-    });
-
-    const instrumentCards = orderedInstruments
-      .map((instrument) => {
-        const selected = this.selectedInstrumentIds.has(instrument.id);
-        const compatible = this.isCompatible(instrument, mission);
-        const isRec = recommendedSet.has(instrument.id);
-
-        return `
-          <label class="mp-inst-card ${selected ? "mp-card-selected" : ""} ${
-          compatible ? "" : "mp-inst-disabled"
-        }">
-            <input
-              type="checkbox"
-              data-instrument-id="${this.escapeHTML(instrument.id)}"
-              ${selected ? "checked" : ""}
-              ${compatible ? "" : "disabled"}
-            />
-            <div class="mp-inst-body">
-              <div class="mp-card-top">
-                <strong>${this.escapeHTML(instrument.name)}</strong>
-                <span class="mp-pill ${isRec ? "mp-pill-rec" : ""}">
-                  ${isRec ? "Recommended" : this.escapeHTML(instrument.category)}
-                </span>
-              </div>
-              <div class="mp-chips">
-                <span>${instrument.massKg} kg</span>
-                <span>${instrument.powerWatts} W</span>
-                <span>$${instrument.costMillions}M</span>
-                <span>${instrument.sciencePoints} pts</span>
-              </div>
-              ${
-                compatible
-                  ? ""
-                  : `<small class="mp-warn-text">Incompatible with ${this.escapeHTML(mission.destination ?? "target")} objectives.</small>`
-              }
-            </div>
-          </label>
-        `;
-      })
+    const selectedDiff = this._difficultyMeta(mission.difficulty);
+    const objectivesHtml = (mission.objectives ?? [])
+      .map((id) => `<li>${this.escapeHTML(OBJECTIVE_LABELS[id] ?? id)}</li>`)
       .join("");
-
-    const canProceed = hasInstruments;
 
     this.container.innerHTML = `
       <div class="mp-shell">
         <aside class="mp-panel mp-panel-left">
           <header class="mp-header">
-            <span class="mp-badge">PHASE 1 · MISSION BRIEF</span>
-            <h2>Select NASA Mission</h2>
+            <span class="mp-badge">Phase 1 · Mission Selection</span>
+            <h2>Choose Your Destination</h2>
           </header>
           <div class="mp-scroll">${missionCards}</div>
         </aside>
 
-        <aside class="mp-panel mp-panel-right">
-          <header class="mp-header">
-            <span class="mp-badge">SCIENTIFIC PAYLOAD</span>
-            <h2>Instruments &amp; Trade-Offs</h2>
+        <aside class="mp-brief-card" aria-label="Mission briefing">
+          <header class="mp-brief-head">
+            <div>
+              <span class="mp-badge">${this.escapeHTML(mission.destination)} · ${this.escapeHTML(this.getTargetOrbitId(mission))}</span>
+              <h3>${this.escapeHTML(mission.name)}</h3>
+            </div>
+            <span class="mp-pill ${selectedDiff.cls}">${selectedDiff.label}</span>
           </header>
-          <div class="mp-scroll">${instrumentCards}</div>
-          <footer class="mp-summary">
-            <div class="mp-summary-grid">
-              <div><span>Payload Mass</span><strong>${totals.mass.toFixed(1)} kg</strong></div>
-              <div><span>Power Draw</span><strong>${totals.power.toFixed(0)} W</strong></div>
-              <div><span>Payload Cost</span><strong>$${totals.cost.toFixed(1)}M</strong></div>
-              <div><span>Remaining Cap</span><strong class="${budgetRemaining < 40 ? "mp-warn" : "mp-ok"}">$${budgetRemaining.toFixed(1)}M</strong></div>
+
+          <p class="mp-brief-obj">${this.escapeHTML(mission.description ?? this._shortObjective(mission))}</p>
+
+          <div class="mp-brief-stats">
+            <div>
+              <span>Science Target</span>
+              <strong class="mp-gold">${mission.minScienceScore}+ pts</strong>
             </div>
-            <div class="mp-science-row">
-              <span>Science Target: ${totals.science} / ${mission.minScienceScore} pts</span>
-              <span class="${scienceSatisfied ? "mp-ok" : "mp-warn"}">
-                ${scienceSatisfied ? "Target met" : `Need ${mission.minScienceScore - totals.science} more`}
-              </span>
+            <div>
+              <span>Mission Budget</span>
+              <strong>$${mission.budgetCap}M</strong>
             </div>
-            <progress class="mp-progress" value="${Math.min(totals.science, mission.minScienceScore)}" max="${Math.max(mission.minScienceScore, 1)}"></progress>
-            ${
-              this.onProceed
-                ? `<button type="button" class="mp-cta" data-action="proceed-spacecraft" ${canProceed ? "" : "disabled"}>
-                    Design Spacecraft →
-                  </button>`
-                : ""
-            }
-          </footer>
+          </div>
+
+          <details class="oc-details">
+            <summary>Mission Specs &amp; Objectives</summary>
+            <div class="oc-details-body">
+              <div class="mp-spec-grid">
+                <div><span>Target Orbit</span><strong>${this.escapeHTML(mission.targetOrbit)}</strong></div>
+                <div><span>Distance</span><strong>${mission.missionDistance.toLocaleString()} km</strong></div>
+                <div><span>Downlink Req</span><strong>${mission.requiredDownlinkDataRate} kbps</strong></div>
+                <div><span>Ref. Mass</span><strong>${mission.realReferenceMassKg?.toLocaleString() ?? "—"} kg</strong></div>
+              </div>
+              ${mission.nasaReference ? `<p class="mp-ref">${this.escapeHTML(mission.nasaReference)}</p>` : ""}
+              ${objectivesHtml ? `<ul class="mp-obj-list">${objectivesHtml}</ul>` : ""}
+            </div>
+          </details>
+
+          ${
+            this.onProceed
+              ? `<button type="button" class="mp-cta" data-action="proceed-spacecraft">
+                  Select Mission &amp; Build Spacecraft →
+                </button>`
+              : ""
+          }
         </aside>
       </div>
     `;
@@ -392,40 +397,77 @@ export class MissionPlanner {
         position: fixed;
         top: 72px;
         bottom: 16px;
-        width: min(370px, calc(50vw - 24px));
+        width: min(360px, calc(46vw - 24px));
         display: flex;
         flex-direction: column;
         gap: 10px;
         padding: 14px;
-        background: rgba(11, 17, 32, 0.88);
+        background: rgba(16, 29, 51, 0.88);
         backdrop-filter: blur(12px);
-        border: 1px solid rgba(56, 189, 248, 0.28);
+        border: 1px solid rgba(25, 191, 255, 0.34);
         border-radius: 12px;
-        color: #f8fafc;
+        color: var(--oc-starlight, #EAF4FF);
+        font-family: var(--font-body, "Inter", system-ui, sans-serif);
         z-index: 20;
-        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+        box-shadow: 0 20px 45px rgba(5, 11, 27, 0.55);
       }
       .mp-panel-left { left: 16px; }
-      .mp-panel-right { right: 16px; }
+      .mp-brief-card {
+        pointer-events: auto;
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        width: min(370px, calc(46vw - 24px));
+        max-height: calc(100vh - 96px);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 15px;
+        background: rgba(16, 29, 51, 0.90);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(25, 191, 255, 0.38);
+        border-radius: 12px;
+        color: var(--oc-starlight, #EAF4FF);
+        font-family: var(--font-body, "Inter", system-ui, sans-serif);
+        z-index: 20;
+        box-shadow: 0 20px 45px rgba(5, 11, 27, 0.6);
+      }
       @media (max-width: 900px) {
         .mp-panel {
           width: calc(100vw - 32px);
-          height: 40vh;
+          height: 36vh;
+          bottom: auto;
         }
-        .mp-panel-left { bottom: auto; }
-        .mp-panel-right { top: auto; bottom: 16px; }
+        .mp-brief-card {
+          left: 16px;
+          right: 16px;
+          width: auto;
+          max-height: 44vh;
+        }
       }
       .mp-badge {
         display: inline-block;
-        font-size: 10px;
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 11px;
         letter-spacing: 0.08em;
-        color: #38bdf8;
+        color: var(--oc-cosmic-cyan, #19BFFF);
         font-weight: 700;
+        text-transform: uppercase;
       }
-      .mp-header h2 {
-        font-size: 16px;
+      .mp-header h2,
+      .mp-brief-head h3 {
+        font-family: var(--font-display, "Orbitron", sans-serif);
+        font-size: 15.5px;
         font-weight: 700;
         margin-top: 2px;
+        color: var(--oc-starlight, #EAF4FF);
+      }
+      .mp-brief-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
       }
       .mp-scroll {
         flex: 1;
@@ -435,138 +477,157 @@ export class MissionPlanner {
         gap: 8px;
         padding-right: 4px;
       }
-      .mp-mission-card,
-      .mp-inst-card {
+      .mp-mission-card {
         text-align: left;
-        background: rgba(15, 23, 42, 0.92);
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        border-radius: 8px;
-        padding: 10px;
-        color: #f8fafc;
+        background: rgba(5, 11, 27, 0.72);
+        border: 1px solid rgba(140, 163, 191, 0.24);
+        border-radius: 9px;
+        padding: 11px;
+        color: var(--oc-starlight, #EAF4FF);
         cursor: pointer;
-        transition: border-color 0.15s ease, background 0.15s ease;
+        transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
       }
-      .mp-inst-card {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-      }
-      .mp-inst-card input {
-        margin-top: 3px;
-        accent-color: #38bdf8;
-      }
-      .mp-inst-body { flex: 1; min-width: 0; }
-      .mp-inst-disabled { opacity: 0.48; cursor: not-allowed; }
-      .mp-mission-card:hover,
-      .mp-inst-card:not(.mp-inst-disabled):hover {
-        border-color: rgba(56, 189, 248, 0.6);
+      .mp-mission-card:hover {
+        border-color: rgba(25, 191, 255, 0.68);
+        transform: translateY(-1px);
       }
       .mp-card-selected {
-        border-color: #38bdf8;
-        background: rgba(14, 116, 144, 0.22);
+        border-color: var(--oc-cosmic-cyan, #19BFFF);
+        background: rgba(22, 119, 255, 0.22);
+        box-shadow: inset 0 0 18px rgba(25, 191, 255, 0.12);
       }
       .mp-card-top {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        gap: 6px;
-        font-size: 13px;
-        margin-bottom: 4px;
+        gap: 8px;
+        font-family: var(--font-body, "Inter", system-ui, sans-serif);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.35;
+        margin-bottom: 5px;
+      }
+      .mp-card-top strong {
+        min-width: 0;
+        overflow-wrap: break-word;
       }
       .mp-pill {
-        font-size: 10px;
-        padding: 2px 6px;
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
         border-radius: 999px;
-        background: rgba(56, 189, 248, 0.16);
-        color: #7dd3fc;
         white-space: nowrap;
       }
-      .mp-pill-rec {
-        background: rgba(34, 197, 94, 0.18);
-        color: #86efac;
-      }
-      .mp-ref {
-        font-size: 10.5px;
-        color: #7dd3fc;
-        margin-bottom: 4px;
-      }
-      .mp-desc {
-        font-size: 11px;
-        color: #94a3b8;
-        line-height: 1.38;
-        margin-bottom: 6px;
-      }
-      .mp-chips {
+      .mp-meta-line {
         display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 5px;
+        font-size: 12px;
+        font-weight: 600;
       }
-      .mp-chips span {
-        font-size: 10px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        background: rgba(51, 65, 85, 0.72);
-        color: #e2e8f0;
+      .mp-dest {
+        color: var(--oc-cosmic-cyan, #19BFFF);
       }
-      .mp-warn-text {
-        display: block;
-        margin-top: 4px;
-        font-size: 10px;
-        color: #fbbf24;
+      .mp-cat {
+        color: var(--oc-nebula-gray, #8CA3BF);
       }
-      .mp-summary {
-        border-top: 1px solid rgba(148, 163, 184, 0.22);
-        padding-top: 10px;
+      .mp-cat::before {
+        content: "• ";
+      }
+      .mp-desc,
+      .mp-brief-obj {
+        font-size: 13px;
+        color: var(--oc-nebula-gray, #8CA3BF);
+        line-height: 1.48;
+      }
+      .mp-card-footer {
         display: flex;
-        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(140, 163, 191, 0.16);
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .mp-reward {
+        color: var(--oc-stellar-gold, #FF9D24);
+      }
+      .mp-select-tag {
+        color: var(--oc-cosmic-cyan, #19BFFF);
+      }
+      .mp-brief-stats {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
         gap: 8px;
       }
-      .mp-summary-grid {
+      .mp-brief-stats > div,
+      .mp-spec-grid > div {
+        background: rgba(5, 11, 27, 0.62);
+        padding: 7px 9px;
+        border-radius: 7px;
+      }
+      .mp-brief-stats span,
+      .mp-spec-grid span {
+        display: block;
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--oc-nebula-gray, #8CA3BF);
+      }
+      .mp-brief-stats strong,
+      .mp-spec-grid strong {
+        font-family: var(--font-body, "Inter", system-ui, sans-serif);
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--oc-starlight, #EAF4FF);
+      }
+      .mp-gold {
+        color: var(--oc-stellar-gold, #FF9D24) !important;
+      }
+      .mp-spec-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 6px;
       }
-      .mp-summary-grid > div {
-        background: rgba(30, 41, 59, 0.65);
-        padding: 6px 8px;
-        border-radius: 6px;
+      .mp-ref {
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: var(--oc-cosmic-cyan, #19BFFF);
       }
-      .mp-summary-grid span {
-        display: block;
-        font-size: 10px;
-        color: #94a3b8;
-      }
-      .mp-summary-grid strong {
-        font-size: 12px;
-        color: #f8fafc;
-      }
-      .mp-science-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 11px;
-        color: #cbd5e1;
-      }
-      .mp-ok { color: #4ade80 !important; }
-      .mp-warn { color: #fbbf24 !important; }
-      .mp-progress {
-        width: 100%;
-        height: 6px;
-        accent-color: #38bdf8;
+      .mp-obj-list {
+        padding-left: 16px;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px 10px;
+        font-size: 12.5px;
+        line-height: 1.45;
+        color: var(--oc-starlight, #EAF4FF);
       }
       .mp-cta {
         width: 100%;
-        padding: 9px 12px;
+        padding: 10px 14px;
         border-radius: 8px;
-        border: 1px solid #38bdf8;
-        background: linear-gradient(135deg, #0284c7, #0ea5e9);
-        color: #fff;
+        border: 1px solid var(--oc-stellar-gold, #FF9D24);
+        background: linear-gradient(135deg, #d97706, var(--oc-stellar-gold, #FF9D24));
+        color: var(--oc-deep-space, #050B1B);
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
         font-weight: 700;
-        font-size: 13px;
+        font-size: 15px;
+        letter-spacing: 0.04em;
         cursor: pointer;
+        box-shadow: 0 6px 20px rgba(255, 157, 36, 0.28);
+        transition: transform 0.15s ease, filter 0.15s ease;
       }
-      .mp-cta:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
+      .mp-cta:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.08);
       }
     `;
     document.head.appendChild(style);

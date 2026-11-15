@@ -5,7 +5,7 @@
  *       and Readiness Status synchronized via GameState.subscribe().
  */
 
-import { formatBudget, formatMass } from "../../../shared/utils/formatters.js";
+import { computeBudgetSummary, formatBudget, formatMass } from "../../../shared/utils/formatters.js";
 
 export class ResourceHUD {
   /**
@@ -33,18 +33,22 @@ export class ResourceHUD {
     const spacecraft = state.spacecraft;
     const launch = state.launch;
 
-    const payloadCost = (mission?.instruments ?? []).reduce(
-      (sum, i) => sum + (i.costMillions ?? 0),
-      0
+    const budget = computeBudgetSummary(
+      mission,
+      spacecraft,
+      launch,
+      state.pendingLaunchCostMillions ?? 0
     );
-    const scCost = spacecraft?.costMillions ?? 0;
-    const launchCost = launch?.launchCostMillions ?? 0;
-    const totalCost = payloadCost + scCost + launchCost;
-    const budgetCap = mission?.budgetMillions ?? 0;
-
-    const budgetRatio = budgetCap > 0 ? totalCost / budgetCap : 0;
     const budgetClass =
-      budgetRatio > 1 ? "gi-bad" : budgetRatio > 0.85 ? "gi-warn" : "gi-ok";
+      budget.ratio > 1 ? "gi-bad" : budget.ratio > 0.85 ? "gi-warn" : "gi-ok";
+    const budgetText = !mission
+      ? "—"
+      : budget.budgetRemaining < 0
+        ? `-$${Math.abs(budget.budgetRemaining).toFixed(1)}M over ($${budget.totalCost.toFixed(1)}M / $${budget.startingBudget}M)`
+        : `${formatBudget(budget.budgetRemaining)} left ($${budget.totalCost.toFixed(1)}M / $${budget.startingBudget}M)`;
+    const budgetTitle = mission
+      ? `Starting Budget: $${budget.startingBudget}M · Instruments: $${budget.instrumentsCost.toFixed(1)}M · Spacecraft: $${budget.spacecraftCost.toFixed(1)}M · Launch: $${budget.launchCost.toFixed(1)}M · Total Spent: $${budget.totalCost.toFixed(1)}M`
+      : "";
 
     const totalMass = spacecraft?.totalMassKg ?? 0;
     const powerMargin = spacecraft
@@ -59,7 +63,7 @@ export class ResourceHUD {
         ? "Build Craft"
         : spacecraft.isValid
           ? "Flight Ready"
-          : `${spacecraft.errors.length} Error(s)`;
+          : `${spacecraft.errors.length} Issue${spacecraft.errors.length === 1 ? "" : "s"}`;
     const readyClass =
       spacecraft?.isValid ? "gi-ok" : spacecraft ? "gi-bad" : "gi-muted";
 
@@ -69,9 +73,9 @@ export class ResourceHUD {
           <span>Mission</span>
           <strong>${mission ? `${this._esc(mission.targetOrbitId)} · ${this._esc(mission.title)}` : "None"}</strong>
         </div>
-        <div class="gi-hud-item">
+        <div class="gi-hud-item" title="${this._esc(budgetTitle)}">
           <span>Budget</span>
-          <strong class="${budgetClass}">${mission ? `${formatBudget(totalCost)} / $${budgetCap}M` : "—"}</strong>
+          <strong class="${budgetClass}">${budgetText}</strong>
         </div>
         <div class="gi-hud-item">
           <span>Mass</span>

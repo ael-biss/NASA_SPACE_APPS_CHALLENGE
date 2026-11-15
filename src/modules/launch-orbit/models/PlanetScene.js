@@ -13,7 +13,6 @@ export class PlanetScene {
     this.group = new THREE.Group();
     this.group.name = "planet-scene-root";
     this._earthMesh = null;
-    this._cloudsMesh = null;
     this._padGroup = null;
     this._destMesh = null;
     this._orbitGroup = null;
@@ -100,7 +99,6 @@ export class PlanetScene {
     const targetFacingLonDeg = -80.6;
     const rotY = THREE.MathUtils.degToRad(targetFacingLonDeg - (site?.longitudeDeg ?? -80.6));
     if (this._earthMesh) this._earthMesh.rotation.y = rotY;
-    if (this._cloudsMesh) this._cloudsMesh.rotation.y = rotY;
   }
 
   /**
@@ -160,18 +158,6 @@ export class PlanetScene {
     this._padGroup = this._buildLaunchPadMarker(this._launchSite);
     this._earthMesh.add(this._padGroup);
 
-    const cloudsMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.07,
-      roughness: 1.0,
-    });
-    this._cloudsMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(this._earthRadius * 1.016, 36, 24),
-      cloudsMat
-    );
-    this.group.add(this._cloudsMesh);
-
     const atmo = new THREE.Mesh(
       new THREE.SphereGeometry(this._earthRadius * 1.072, 36, 24),
       new THREE.MeshBasicMaterial({
@@ -186,6 +172,47 @@ export class PlanetScene {
     this.group.add(this._createStarfield());
     this.orientToSite(this._launchSite);
     return this.group;
+  }
+
+  /**
+   * Build a clean, strictly non-looping Quadratic Bezier transfer trajectory curve
+   * from LEO parking departure to destination capture/target ring.
+   *
+   * @param {Object} orbit
+   * @param {THREE.Vector3} leoDeparture
+   * @param {THREE.Vector3} leoDepartureDir
+   * @returns {THREE.QuadraticBezierCurve3 | null}
+   */
+  static computeTransferCurve(orbit, leoDeparture, leoDepartureDir) {
+    if (!orbit || orbit.id === "LEO") return null;
+    const targetRadius = orbit?.orbitRadius3D ?? 3.0;
+    const isDeep = orbit.id === "LUNAR" || orbit.id === "MARS";
+
+    if (isDeep) {
+      const destRadius = orbit.id === "MARS" ? 0.95 : 0.72;
+      const captureR = destRadius + 0.65;
+      const endPoint = new THREE.Vector3(targetRadius, 0, -captureR);
+
+      // Single clean monotonic control point forward in +X and gently arched in -Z/+Y
+      const chordLen = leoDeparture.distanceTo(endPoint);
+      const ctrl = leoDeparture
+        .clone()
+        .addScaledVector(leoDepartureDir, chordLen * 0.34);
+      ctrl.x = Math.max(leoDeparture.x + 0.65, Math.min(targetRadius - 0.5, (leoDeparture.x + targetRadius) * 0.46));
+      ctrl.y = Math.max(-0.2, Math.min(1.3, (leoDeparture.y + endPoint.y) * 0.55));
+      ctrl.z = Math.min(leoDeparture.z, -captureR * 0.55);
+
+      return new THREE.QuadraticBezierCurve3(leoDeparture.clone(), ctrl, endPoint);
+    }
+
+    // MEO / GEO single clean Hohmann transfer arc (monotonically spiraling outward)
+    const endPoint = new THREE.Vector3(targetRadius, 0, 0);
+    const ctrl = leoDeparture
+      .clone()
+      .lerp(endPoint, 0.5)
+      .addScaledVector(leoDepartureDir, targetRadius * 0.28);
+    ctrl.setLength(Math.max(leoDeparture.length() * 1.15, targetRadius * 0.88));
+    return new THREE.QuadraticBezierCurve3(leoDeparture.clone(), ctrl, endPoint);
   }
 
   /**
@@ -207,7 +234,13 @@ export class PlanetScene {
 
     const leoRadius = 3.0;
     const targetRadius = orbit?.orbitRadius3D ?? 3.0;
-    const inclRad = ((orbit?.inclinationDeg ?? 28.6) * Math.PI) / 180;
+    const siteMinInclDeg = Math.abs(launchSite?.latitudeDeg ?? 28.6);
+    const isEarthOrbit = !orbit?.targetBody || orbit.targetBody === "Earth";
+    const resolvedInclDeg =
+      isEarthOrbit && typeof orbit?.inclinationDeg === "number" && Number.isFinite(orbit.inclinationDeg)
+        ? orbit.inclinationDeg
+        : siteMinInclDeg;
+    const inclRad = (resolvedInclDeg * Math.PI) / 180;
 
     // Orient LEO parking orbit ring into the great-circle plane (up, heading) from launch site
     const siteFrame = this.getLaunchSiteFrame(launchSite, azimuthDeg);
@@ -295,36 +328,36 @@ export class PlanetScene {
       destGroup.add(captureRing);
       orbitGroup.add(destGroup);
 
-      // Outbound transfer trajectory arc from LEO departure point to destination capture ring
-      const p1 = leoDeparture.clone().addScaledVector(leoDepartureDir, targetRadius * 0.35);
-      p1.x = Math.max(p1.x, targetRadius * 0.42);
-      const p2 = new THREE.Vector3(targetRadius * 0.78, 0.35, -0.95);
-      const p3 = new THREE.Vector3(targetRadius, 0, -(destRadius + 0.65));
-      const curve = new THREE.CatmullRomCurve3([leoDeparture, p1, p2, p3]);
-      const arcPoints = curve.getPoints(72);
-      const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
-      const arcMat = new THREE.LineBasicMaterial({
-        color: isMars ? 0xf59e0b : 0x7dd3fc,
-        transparent: true,
-        opacity: 0.72,
-      });
-      orbitGroup.add(new THREE.Line(arcGeo, arcMat));
+      // Clean loop-free transfer trajectory arc
+      const curve = PlanetScene.computeTransferCurve(orbit, leoDeparture, leoDepartureDir);
+      if (curve) {
+        const arcPoints = curve.getPoints(72);
+        const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
+        const arcMat = new THREE.LineBasicMaterial({
+          color: isMars ? 0xf59e0b : 0x7dd3fc,
+          transparent: true,
+          opacity: 0.78,
+        });
+        orbitGroup.add(new THREE.Line(arcGeo, arcMat));
+
+        const mid = curve.getPoint(0.52);
+        this._addNotToScaleBadge(orbitGroup, mid.clone().add(new THREE.Vector3(0, 0.45, 0)));
+      }
     } else if (orbit && orbit.id !== "LEO") {
       // MEO / GEO target orbit ring tilted at its true equatorial inclination + transfer arc
       orbitGroup.add(this._makeRing(targetRadius, 0x22c55e, 0.62, inclRad));
-      const p1 = leoDeparture
-        .clone()
-        .addScaledVector(leoDepartureDir, targetRadius * 0.45)
-        .setLength(targetRadius * 0.76);
-      const p2 = new THREE.Vector3(targetRadius, 0, 0);
-      const curve = new THREE.CatmullRomCurve3([leoDeparture, p1, p2]);
-      const arcGeo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48));
-      orbitGroup.add(
-        new THREE.Line(
-          arcGeo,
-          new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.65 })
-        )
-      );
+      const curve = PlanetScene.computeTransferCurve(orbit, leoDeparture, leoDepartureDir);
+      if (curve) {
+        const arcGeo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(56));
+        orbitGroup.add(
+          new THREE.Line(
+            arcGeo,
+            new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.72 })
+          )
+        );
+        const mid = curve.getPoint(0.5);
+        this._addNotToScaleBadge(orbitGroup, mid.clone().add(new THREE.Vector3(0, 0.38, 0)));
+      }
       this._destPosition.set(0, 0, 0);
       this._destMesh = null;
     } else {
@@ -356,9 +389,6 @@ export class PlanetScene {
     if (this._earthMesh) {
       this._earthMesh.rotation.y += deltaTime * earthRate;
     }
-    if (this._cloudsMesh) {
-      this._cloudsMesh.rotation.y += deltaTime * (earthRate + 0.015);
-    }
     if (this._destMesh) {
       this._destMesh.rotation.y += deltaTime * 0.18;
     }
@@ -376,7 +406,6 @@ export class PlanetScene {
     }
     this._textures = [];
     this._earthMesh = null;
-    this._cloudsMesh = null;
     this._padGroup = null;
     this._destMesh = null;
     this._orbitGroup = null;
@@ -447,6 +476,25 @@ export class PlanetScene {
     }
 
     return padGroup;
+  }
+
+  _addNotToScaleBadge(orbitGroup, position) {
+    if (typeof document === "undefined") return;
+    const tex = this._createPadLabelTexture("NOT TO SCALE");
+    if (!tex) return;
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+      })
+    );
+    sprite.name = "trajectory-scale-label";
+    sprite.position.copy(position);
+    sprite.scale.set(0.95, 0.25, 1);
+    sprite.renderOrder = 10;
+    orbitGroup.add(sprite);
   }
 
   _createPadLabelTexture(text) {

@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { soundFX } from "../../shared/utils/SoundEffects.js";
 import { buildSpacecraftModel } from "../spacecraft-design/index.js";
 import { DEFAULT_LAUNCH_SITE_ID, getLaunchSiteById } from "./data/launchSites.js";
 import { getOrbitById } from "./data/orbits.js";
@@ -44,13 +45,13 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   rootGroup.add(earthGroup);
   rootGroup.add(launchAnimation.getGroup());
 
-  sceneManager.scene.background = new THREE.Color(0x030712);
+  sceneManager.scene.background = new THREE.Color(0x050b1b);
   sceneManager.addObject(rootGroup);
 
   const controls = new OrbitControls(sceneManager.camera, sceneManager.renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
-  controls.minDistance = 2.6;
+  controls.minDistance = 1.4;
   controls.maxDistance = 38;
 
   const isDeepSpace = orbit.id === "LUNAR" || orbit.id === "MARS";
@@ -66,9 +67,18 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
 
   let currentSpacecraftHandle = null;
   let lastLaunchArgs = null;
+  let userDragged = false;
+  const followTarget = new THREE.Vector3().copy(camTarget);
+  const smoothedFocus = new THREE.Vector3().copy(camTarget);
+
+  const onControlStart = () => {
+    userDragged = true;
+  };
+  controls.addEventListener("start", onControlStart);
 
   const startFlight = (rocketId, orbitId, fairingId) => {
     lastLaunchArgs = { rocketId, orbitId, fairingId };
+    userDragged = false;
     const rocket = getRocketById(rocketId);
     const resolvedOrbit = getOrbitById(orbitId) ?? orbit;
     const launchResult = mechanics.simulateLaunch(rocket, gameState.spacecraft, resolvedOrbit, {
@@ -97,10 +107,41 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
 
     panel.setFlightState(launchResult);
 
+    let lastCountdown = null;
+    let engineStarted = false;
+    let lastStageLabel = "";
+
+    const siteFrame = planetScene.getLaunchSiteFrame(launchSite, launchAzimuthDeg);
     launchAnimation.start(rocket, currentSpacecraftHandle, resolvedOrbit, launchResult, {
-      siteFrame: planetScene.getLaunchSiteFrame(launchSite, launchAzimuthDeg),
+      siteFrame,
       getSiteFrame: () => planetScene.getLaunchSiteFrame(launchSite, launchAzimuthDeg),
       onPhaseUpdate: (phaseIndex, phase, telemetry) => {
+        if (telemetry?.countdownSec > 0) {
+          if (telemetry.countdownSec !== lastCountdown) {
+            lastCountdown = telemetry.countdownSec;
+            soundFX.playCountdownTick(false);
+          }
+        } else if (!engineStarted && !telemetry?.failed) {
+          engineStarted = true;
+          soundFX.playCountdownTick(true);
+          soundFX.startEngineLoop();
+        }
+
+        if (telemetry?.activeStage && telemetry.activeStage !== lastStageLabel) {
+          if (lastStageLabel) {
+            soundFX.playStageSeparation();
+          }
+          lastStageLabel = telemetry.activeStage;
+        }
+
+        if (telemetry?.failed) {
+          soundFX.stopEngineLoop();
+          soundFX.playAlarm();
+        } else if (engineStarted) {
+          const thrIntensity = (telemetry?.gLoad ?? 1) > 0.2 ? 1.0 : 0.25;
+          soundFX.updateEngineIntensity(thrIntensity);
+        }
+
         panel.updateTelemetry({
           phaseIndex,
           phase,
@@ -108,9 +149,28 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
         });
       },
       onComplete: (completedResult) => {
+        soundFX.stopEngineLoop();
+        if (completedResult?.success) {
+          soundFX.playSuccess();
+        }
         panel.markFlightComplete(completedResult);
       },
     });
+
+    // Frame the camera cleanly at the KSC launch pad for T-3 countdown
+    const padFocus = launchAnimation.getFocusTarget();
+    followTarget.copy(padFocus);
+    smoothedFocus.copy(padFocus);
+    controls.target.copy(padFocus);
+    const padViewOffset = siteFrame.up
+      .clone()
+      .multiplyScalar(1.3)
+      .addScaledVector(siteFrame.heading, 1.8)
+      .add(new THREE.Vector3(0.4, 0.5, 1.9))
+      .normalize()
+      .multiplyScalar(2.4);
+    sceneManager.camera.position.copy(padFocus).add(padViewOffset);
+    controls.update();
   };
 
   const panel = new LaunchControlPanel(uiContainer, gameState, {
@@ -132,26 +192,75 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     launchAnimation,
     controls,
     panel,
+    followTarget,
+    smoothedFocus,
+    isUserDragged: () => userDragged,
+    onControlStart,
     getSpacecraftHandle: () => currentSpacecraftHandle,
   };
 }
 
 /**
- * Per-frame update hook advancing planet rotation, launch/orbit animation, and camera shake.
+ * Per-frame update hook advancing planet rotation, launch/orbit animation, smooth camera follow, and shake.
  * @param {number} deltaTime
  */
 export function update(deltaTime) {
   if (!activeState) return;
-  const { planetScene, launchAnimation, controls, sceneManager } = activeState;
+  const {
+    planetScene,
+    launchAnimation,
+    controls,
+    sceneManager,
+    followTarget,
+    smoothedFocus,
+    isUserDragged,
+  } = activeState;
+
   planetScene.update(deltaTime, launchAnimation.running);
   launchAnimation.update(deltaTime);
+
+  const shouldFollow = launchAnimation.running || launchAnimation._orbiting;
+  if (shouldFollow) {
+    const focus = launchAnimation.getFocusTarget();
+    const alpha = Math.min(1, deltaTime * 5.5);
+    const prevX = smoothedFocus.x;
+    const prevY = smoothedFocus.y;
+    const prevZ = smoothedFocus.z;
+    smoothedFocus.lerp(focus, alpha);
+
+    const dx = smoothedFocus.x - prevX;
+    const dy = smoothedFocus.y - prevY;
+    const dz = smoothedFocus.z - prevZ;
+
+    controls.target.set(
+      followTarget.x + dx,
+      followTarget.y + dy,
+      followTarget.z + dz
+    );
+    followTarget.copy(controls.target);
+    sceneManager.camera.position.x += dx;
+    sceneManager.camera.position.y += dy;
+    sceneManager.camera.position.z += dz;
+
+    if (!isUserDragged() && launchAnimation.running) {
+      const p = launchAnimation.progress ?? 0;
+      const desiredDist = p < 0.2 ? 2.4 : p < 0.58 ? 3.5 : 5.4;
+      const offset = sceneManager.camera.position.clone().sub(controls.target);
+      const curDist = offset.length();
+      if (curDist > 1e-4) {
+        const nextDist = curDist + (desiredDist - curDist) * Math.min(1, deltaTime * 1.8);
+        offset.setLength(nextDist);
+        sceneManager.camera.position.copy(controls.target).add(offset);
+      }
+    }
+  }
 
   const shake = launchAnimation.getCameraShake();
   if (shake > 0.01) {
     const focus = launchAnimation.getFocusTarget();
     controls.target.set(
-      focus.x + (Math.random() - 0.5) * shake * 0.25,
-      focus.y + (Math.random() - 0.5) * shake * 0.25,
+      focus.x + (Math.random() - 0.5) * shake * 0.22,
+      focus.y + (Math.random() - 0.5) * shake * 0.22,
       focus.z
     );
   }
@@ -173,6 +282,7 @@ export function unmount() {
 
   panel.destroy();
   controls.dispose();
+  soundFX.stopEngineLoop();
   launchAnimation.reset();
   const scHandle = getSpacecraftHandle();
   scHandle?.spacecraft?.dispose();

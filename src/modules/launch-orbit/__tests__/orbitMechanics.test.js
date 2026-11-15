@@ -731,3 +731,108 @@ test("LaunchAnimation breaks multi-part spacecraft into disappearing parts on ex
   anim.dispose?.();
   anim.reset();
 });
+
+test("PlanetScene removes grey cloud blob and computes loop-free transfer arcs", () => {
+  const planetScene = new PlanetScene();
+  planetScene.buildEarth();
+  assert.equal(planetScene._cloudsMesh, undefined, "grey translucent cloud blob mesh must be removed");
+
+  const frame = planetScene.getLaunchSiteFrame(getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID), 90);
+  const leoRadius = 3.0;
+  const angle = 0.72;
+  const leoDeparture = frame.up
+    .clone()
+    .multiplyScalar(Math.cos(angle) * leoRadius)
+    .addScaledVector(frame.heading, Math.sin(angle) * leoRadius);
+  const leoDir = frame.up
+    .clone()
+    .multiplyScalar(-Math.sin(angle))
+    .addScaledVector(frame.heading, Math.cos(angle))
+    .normalize();
+
+  for (const orbitId of ["MEO", "GEO", "LUNAR", "MARS"]) {
+    const orbit = getOrbitById(orbitId);
+    const curve = PlanetScene.computeTransferCurve(orbit, leoDeparture, leoDir);
+    assert.ok(curve, `${orbitId} should compute a transfer curve`);
+    const pts = curve.getPoints(48);
+    // Transfer arc must progress smoothly without backtracking loops in radial distance
+    let prevDist = pts[0].length();
+    let maxDrop = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const dist = pts[i].length();
+      if (dist < prevDist) maxDrop = Math.max(maxDrop, prevDist - dist);
+      prevDist = dist;
+    }
+    assert.ok(maxDrop < 0.35, `${orbitId} transfer curve must remain smooth without loops (drop=${maxDrop})`);
+  }
+
+  planetScene.dispose();
+});
+
+test("LaunchAnimation Phase 3: pad grounding, countdown, plume particles, Stage 2 separation, and 1x/10x/100x warp", () => {
+  const mechanics = new OrbitMechanics();
+  const scSpec = new SpacecraftConfig(DEFAULT_SELECTION).toSpacecraftSpec();
+  const leoOrbit = getOrbitById("LEO");
+  const mediumRocket = getRocketById("medium-orbital");
+  const launchResult = mechanics.simulateLaunch(mediumRocket, scSpec, leoOrbit);
+  assert.equal(launchResult.success, true);
+
+  const planetScene = new PlanetScene();
+  const siteFrame = planetScene.getLaunchSiteFrame(getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID), 90);
+  const scGroup = new THREE.Group();
+  const bus = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.55, 0.45), new THREE.MeshStandardMaterial());
+  scGroup.add(bus);
+
+  const anim = new LaunchAnimation();
+  const countdowns = [];
+  let sawPlumeParticles = false;
+  let completed = false;
+
+  anim.setSpeed(10);
+  assert.equal(anim.speedMultiplier, 10);
+  anim.setSpeed(100);
+  assert.equal(anim.speedMultiplier, 100);
+  anim.setSpeed(1);
+  assert.equal(anim.speedMultiplier, 1);
+
+  anim.start(mediumRocket, { group: scGroup }, leoOrbit, launchResult, {
+    siteFrame,
+    onPhaseUpdate: (_idx, _phase, meta) => {
+      if (meta?.countdownSec > 0) countdowns.push(meta.countdownSec);
+    },
+    onComplete: () => {
+      completed = true;
+    },
+  });
+
+  // Pad grounding: Stage 1 bottom nozzles sit above Earth radius (1.8), no machCone
+  assert.equal(anim._machCone, undefined);
+  const stack = anim.getGroup().getObjectByName("launch-vehicle-stack");
+  assert.ok(stack);
+  anim.getGroup().updateMatrixWorld(true);
+  const stackBox = new THREE.Box3().setFromObject(stack);
+  assert.ok(stackBox.min.length() >= 1.79 || stack.position.length() > 1.95, "rocket seated above pad surface");
+
+  // Run 1x countdown ticks
+  for (let i = 0; i < 45 && anim.isCountdownActive(); i++) {
+    anim.update(0.08);
+  }
+  assert.ok(countdowns.includes(3) && countdowns.includes(1), "countdown ticks T-3..1 emitted");
+  assert.equal(anim.isCountdownActive(), false, "countdown completes to liftoff");
+
+  // Switch to 10x warp and confirm plumes + Stage 2 separation + completion
+  anim.setSpeed(10);
+  for (let i = 0; i < 60 && !completed; i++) {
+    anim.update(0.05);
+    if (anim.getGroup().getObjectByName("engine-plume-particles")) {
+      sawPlumeParticles = true;
+    }
+  }
+  assert.equal(sawPlumeParticles, true, "engine exhaust plume particles spawn during powered flight");
+  assert.equal(anim._stage2Separated, true, "Stage 2 separates cleanly at payload deployment");
+  assert.equal(completed, true, "10x time warp completes flight cleanly");
+
+  anim.reset();
+  assert.equal(anim._debris.length, 0);
+  planetScene.dispose();
+});

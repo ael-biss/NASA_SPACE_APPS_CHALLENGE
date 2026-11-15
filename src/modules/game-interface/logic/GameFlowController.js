@@ -86,14 +86,22 @@ export class GameFlowController {
       const evaluation = missionScience.evaluateMission(this.gameState);
       this.gameState.setPhase("results");
       this.onPhaseChanged?.("results");
-      this._resultsModal.show(evaluation, this.gameState.launch, {
-        onModifyDesign: () => this.setPhase("spacecraft"),
-        onReplayLaunch: () => this.setPhase("launch"),
-        onNewMission: () => {
-          this.gameState.reset();
-          this.setPhase("mission");
+      this._resultsModal.show(
+        evaluation,
+        this.gameState.launch,
+        {
+          onModifyDesign: () => this.setPhase("spacecraft"),
+          onReplayLaunch: () => this.setPhase("launch"),
+          onNewMission: () => {
+            this.gameState.reset();
+            this.setPhase("mission");
+          },
         },
-      });
+        {
+          mission: this.gameState.mission,
+          spacecraft: this.gameState.spacecraft,
+        }
+      );
       return;
     }
 

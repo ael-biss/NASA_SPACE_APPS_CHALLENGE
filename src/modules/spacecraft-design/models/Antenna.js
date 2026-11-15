@@ -166,8 +166,8 @@ export class Antenna {
     rimRing.position.y = depth;
     dishGroup.add(rimRing);
 
-    // Central feed stalk + 3 tripod struts converging on amber-gold feed horn cap
-    const feedHeight = radius * 0.74;
+    // Central feed stalk + tripod (or Cassegrain quad-pod + sub-reflector for deep-dish)
+    const feedHeight = radius * (style === "deep-dish" ? 0.82 : 0.74);
     const centerStalk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.028, 0.042, feedHeight * 0.48, 8),
       metalMaterial
@@ -182,9 +182,28 @@ export class Antenna {
     feedCap.position.y = feedHeight;
     dishGroup.add(feedCap);
 
+    if (style === "deep-dish") {
+      // Cassegrain secondary sub-reflector dome & gold Ka-band RF rim collar
+      const subReflector = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.09, 0.055, 12),
+        metalMaterial
+      );
+      subReflector.position.y = feedHeight + 0.045;
+      dishGroup.add(subReflector);
+
+      const kaRing = new THREE.Mesh(
+        new THREE.TorusGeometry(radius * 0.62, 0.016, 6, 16),
+        goldMaterial
+      );
+      kaRing.rotation.x = Math.PI / 2;
+      kaRing.position.y = depth * 0.38;
+      dishGroup.add(kaRing);
+    }
+
+    const strutCount = style === "deep-dish" ? 4 : 3;
     const strutEnd = new THREE.Vector3(0, feedHeight - 0.02, 0);
-    for (let i = 0; i < 3; i++) {
-      const angle = (i * Math.PI * 2) / 3 + 0.3;
+    for (let i = 0; i < strutCount; i++) {
+      const angle = (i * Math.PI * 2) / strutCount + 0.3;
       const start = new THREE.Vector3(
         Math.cos(angle) * radius * 0.72,
         depth * 0.52,

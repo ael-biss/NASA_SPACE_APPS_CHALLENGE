@@ -15,7 +15,7 @@ import {
   SUBSYSTEM_CATEGORIES,
   getComponentsByCategory,
 } from "../data/components.js";
-import { SpacecraftConfig } from "../logic/SpacecraftConfig.js";
+import { SpacecraftConfig, computeCheapestAutoFix } from "../logic/SpacecraftConfig.js";
 import { KennedyHangarScene } from "../models/KennedyHangarScene.js";
 import { Spacecraft } from "../models/Spacecraft.js";
 
@@ -115,18 +115,61 @@ test("Spacecraft.assemble builds a complete 3D THREE.Group and disposes cleanly"
   assert.equal(group.children.length, 0);
 });
 
-test("Spacecraft.assemble omits 3D instrument rendering even when instruments are passed", () => {
+test("Spacecraft.assemble renders chosen 3D instruments, antenna type, shielding, and radiators", () => {
   const craft = new Spacecraft();
-  const group = craft.assemble(DEFAULT_SELECTION, [
-    { id: "INS_LIDAR_01", name: "Laser Altimeter (LIDAR)" },
-    { id: "INS_CAM_01", name: "Optical Camera" },
-  ]);
+  const group = craft.assemble(
+    {
+      ...DEFAULT_SELECTION,
+      antennaId: "ka-band-deep-space",
+      thermalId: "active-radiators",
+      shieldingId: "tantalum-poly-shield",
+    },
+    [
+      { id: "INS_LIDAR_01", name: "Laser Altimeter (LIDAR)" },
+      { id: "INS_CAM_01", name: "Optical Camera" },
+    ]
+  );
 
-  // Only the 5 base subsystems are rendered (structure, solar, propulsion, antenna, battery)
-  assert.equal(group.children.length, 5);
-  assert.equal(group.getObjectByName("payload-instruments"), undefined);
+  const payloadGroup = group.getObjectByName("payload-instruments");
+  assert.ok(payloadGroup, "payload-instruments group should be mounted");
+  assert.ok(payloadGroup.getObjectByName("instrument:INS_LIDAR_01"));
+  assert.ok(payloadGroup.getObjectByName("instrument:INS_CAM_01"));
+  assert.ok(group.getObjectByName("antenna:ka-band-deep-space"));
+  assert.ok(group.getObjectByName("thermal:active-radiators"));
+  assert.ok(group.getObjectByName("shielding:tantalum-poly-shield"));
 
   craft.dispose();
+});
+
+test("computeCheapestAutoFix resolves errors & warnings at lowest cost delta", () => {
+  const lunarMission = {
+    missionId: "MISSION_LUNAR_ORBIT",
+    title: "Lunar Polar Exploration",
+    targetOrbitId: "LUNAR",
+    budgetMillions: 230,
+    minSciencePoints: 85,
+    requiredDataRateKbps: 8,
+    targetDistanceKm: 384400,
+    instruments: [
+      { id: "INS_CAM_01", name: "Optical Camera", massKg: 12, powerWatts: 25, dataRateKbps: 8000, costMillions: 15, sciencePoints: 20 },
+      { id: "INS_SPEC_01", name: "IR Spectrometer", massKg: 18, powerWatts: 35, dataRateKbps: 5000, costMillions: 20, sciencePoints: 25 },
+      { id: "INS_LIDAR_01", name: "Laser Altimeter", massKg: 20, powerWatts: 40, dataRateKbps: 4000, costMillions: 22, sciencePoints: 25 },
+      { id: "INS_THERMAL_01", name: "Thermal Mapper", massKg: 10, powerWatts: 20, dataRateKbps: 6000, costMillions: 16, sciencePoints: 25 },
+    ],
+  };
+
+  const fix = computeCheapestAutoFix(DEFAULT_SELECTION, lunarMission.instruments, lunarMission);
+  assert.ok(fix, "expected non-null auto-fix suggestion");
+  assert.ok(fix.changes.length > 0);
+  assert.equal(fix.remainingErrors, 0);
+  assert.equal(fix.remainingWarnings, 0);
+
+  const applied = new SpacecraftConfig(fix.selection);
+  applied.setInstruments(lunarMission.instruments);
+  const spec = applied.toSpacecraftSpec(lunarMission);
+  assert.equal(spec.isValid, true);
+  assert.equal(spec.errors.length, 0);
+  assert.equal(spec.warnings.length, 0);
 });
 
 test("Spacecraft mounts 3D engineering-upgrades and computes thermal/rad/attitude limits", () => {

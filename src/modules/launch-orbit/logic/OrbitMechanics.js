@@ -275,6 +275,81 @@ export class OrbitMechanics {
   }
 
   /**
+   * Compute dynamic ascent acceleration (G-load) profile across rocket booster/core burn.
+   * Simulates mass depletion (m0 -> m_burnout) and distinguishes throttled liquid stages from
+   * unthrottled solid propellant motors whose burnout G-load varies inversely with payload mass.
+   *
+   * @param {Object} rocket
+   * @param {number} [payloadKg=0]
+   * @param {number} [fairingMassKg=0]
+   * @returns {{ peakG: number, liftoffG: number, samples: Array<{ fraction: number, stageIndex: number, stageName: string, gLoad: number }> }}
+   */
+  computeAscentGLoadProfile(rocket, payloadKg = 0, fairingMassKg = 0) {
+    const stages = Array.isArray(rocket?.stages) ? rocket.stages : [];
+    const effPayload = Math.max(0, (payloadKg || 0) + (fairingMassKg || 0));
+    const g0 = PHYSICS.STANDARD_GRAVITY_MS2;
+    const throttleCap = rocket?.peakLaunchG ?? 5.2;
+
+    if (stages.length === 0) {
+      return {
+        peakG: throttleCap,
+        liftoffG: 1.3,
+        samples: [
+          { fraction: 0, stageIndex: 0, stageName: "Stage 1 (Booster)", gLoad: 1.3 },
+          { fraction: 1, stageIndex: 0, stageName: "Stage 1 (Booster)", gLoad: throttleCap },
+        ],
+      };
+    }
+
+    // Ascent stages: booster + mid/upper stages (up to orbital velocity)
+    const ascentStages = stages.slice(0, Math.min(stages.length, 2));
+    const totalStepsPerStage = 8;
+    const samples = [];
+    let maxComputedG = 0;
+
+    for (let sIdx = 0; sIdx < ascentStages.length; sIdx++) {
+      const st = ascentStages[sIdx];
+      const upperRemainingKg = stages
+        .slice(sIdx + 1)
+        .reduce((sum, u) => sum + (u?.dryMassKg ?? 0) + (u?.propellantMassKg ?? 0), 0);
+      const isSolid = String(st?.propellantType ?? "").toLowerCase().includes("solid");
+      const thrustSL = (st?.thrustSeaLevelN > 0 ? st.thrustSeaLevelN : st?.thrustVacuumN) || 0;
+      const thrustVac = (st?.thrustVacuumN > 0 ? st.thrustVacuumN : thrustSL) || 0;
+      const dryKg = st?.dryMassKg ?? 0;
+      const propKg = st?.propellantMassKg ?? 0;
+
+      for (let k = 0; k <= totalStepsPerStage; k++) {
+        if (sIdx > 0 && k === 0) continue; // avoid duplicate seam point
+        const localT = k / totalStepsPerStage;
+        const instantaneousMass = Math.max(1, effPayload + upperRemainingKg + dryKg + propKg * (1 - localT));
+        const thrustN = thrustSL + (thrustVac - thrustSL) * (sIdx === 0 ? localT : 1);
+        const rawG = thrustN / (instantaneousMass * g0);
+
+        // Regressive solid grain tail-off at burnout (~0.858 at burnout) vs throttled liquid guidance cap
+        const grainFactor = isSolid ? 1 - 0.142 * Math.pow(localT, 2) : 1;
+        let gLoad = isSolid ? rawG * grainFactor : Math.min(rawG, throttleCap);
+        gLoad = Math.max(0.5, Number(gLoad.toFixed(2)));
+        maxComputedG = Math.max(maxComputedG, gLoad);
+
+        const globalFraction = (sIdx + localT) / ascentStages.length;
+        samples.push({
+          fraction: Number(globalFraction.toFixed(3)),
+          stageIndex: sIdx,
+          stageName: st?.name ?? `Stage ${sIdx + 1}`,
+          gLoad,
+        });
+      }
+    }
+
+    const peakG = Number(Math.max(maxComputedG, samples[samples.length - 1]?.gLoad ?? throttleCap).toFixed(1));
+    return {
+      peakG,
+      liftoffG: samples[0]?.gLoad ?? 1.3,
+      samples,
+    };
+  }
+
+  /**
    * Simulate all 7 outbound flight phases and produce a detailed LaunchResult.
    * @param {Object | string} rocket
    * @param {import('../../../shared/interfaces/SpacecraftSpec.js').SpacecraftSpec} spacecraftSpec
@@ -378,6 +453,11 @@ export class OrbitMechanics {
     const rocketMassKg = resolvedRocket.liftoffMassKg ?? 120000;
     const stackMassKg = rocketMassKg + effectivePayloadKg;
     const twr = liftoffThrustN / (stackMassKg * PHYSICS.STANDARD_GRAVITY_MS2);
+    const ascentProfile = this.computeAscentGLoadProfile(
+      resolvedRocket,
+      spacecraftSpec.totalMassKg,
+      fairingMassKg
+    );
 
     const failAtPhase = (phaseId, phaseName, summary, cause, fix, failureMode, metrics = {}, achievedAlt = 0) => {
       result.phases.push({
@@ -393,7 +473,7 @@ export class OrbitMechanics {
       result.success = false;
       result.achievedAltitudeKm = achievedAlt;
       result.remainingDeltaVMs = 0;
-      result.deltaVMarginMs = 0;
+      result.deltaVMarginMs = Math.round(totalDeltaV - requiredDeltaV);
       result.deltaVRequiredMs = requiredDeltaV;
       result.deltaVAvailableMs = totalDeltaV;
       result.reason = cause;
@@ -406,6 +486,7 @@ export class OrbitMechanics {
         launchSiteId: resolvedSite.id,
         launchSiteName: resolvedSite.name,
         launchAzimuthDeg: dvBreakdown.azimuthDeg,
+        targetInclDeg: dvBreakdown.targetInclDeg,
         rotationBonusMs: dvBreakdown.rotationBonusMs,
         planeChangeDeltaVMs: dvBreakdown.planeChangeDeltaVMs,
         azimuthPenaltyMs: dvBreakdown.azimuthPenaltyMs,
@@ -416,7 +497,8 @@ export class OrbitMechanics {
         stages: stageCalc.stages,
         twr: Number(twr.toFixed(2)),
         maxQPa: resolvedRocket.maxQPa ?? 31000,
-        peakLaunchG: resolvedRocket.peakLaunchG ?? 5.2,
+        peakLaunchG: ascentProfile.peakG,
+        ascentGCurve: ascentProfile.samples,
         cruiseDays: resolvedOrbit.cruiseDays ?? 1,
         commsDelaySec: Number(
           ((options.missionSpec?.targetDistanceKm ?? resolvedOrbit.altitudeKm) /
@@ -537,24 +619,31 @@ export class OrbitMechanics {
     });
 
     // ------------------------------------------------------------
-    // PHASE 3: ASCENT & STAGING (G-load, Vibration & LEO Energy)
+    // PHASE 3: ASCENT & STAGING (G-load computed during burn, Vibration & LEO Energy)
     // ------------------------------------------------------------
-    const peakG = resolvedRocket.peakLaunchG ?? 5.2;
+    const gCrossing = ascentProfile.samples.find((s) => s.gLoad > limits.maxG) || null;
+    const peakG = ascentProfile.peakG;
     const damping = resolvedFairing?.vibrationDamping ?? 1.0;
     const effectiveVibG = (resolvedRocket.vibrationGrms ?? 5.4) * damping;
 
-    if (peakG > limits.maxG) {
+    if (gCrossing || peakG > limits.maxG) {
+      const failG = gCrossing ? Math.max(peakG, gCrossing.gLoad) : peakG;
       health.structure = 0;
       health.propulsion = 0;
       return failAtPhase(
         "ascent",
         "3. Ascent & Staging",
-        `Peak ${peakG.toFixed(1)}g > ${limits.maxG.toFixed(1)}g limit`,
-        `Sustained staging acceleration (${peakG.toFixed(1)} g) exceeded spacecraft structural/component limit (${limits.maxG.toFixed(1)} g).`,
-        `Choose a liquid-core launcher with gentler acceleration (Medium, Heavy, or Super-Heavy) or reinforce components.`,
+        `Computed ${failG.toFixed(1)}g > ${limits.maxG.toFixed(1)}g limit`,
+        `Computed ${gCrossing?.stageName ?? "ascent"} acceleration reached ${failG.toFixed(1)} g during propellant burnout, exceeding spacecraft structural/component limit (${limits.maxG.toFixed(1)} g).`,
+        `Choose a throttled liquid-core launcher (Medium, Heavy, or Super-Heavy) or reinforce components.`,
         "structural-breakup",
-        { peakG, maxG: limits.maxG, effectiveVibG: Number(effectiveVibG.toFixed(2)) },
-        0
+        {
+          peakG: failG,
+          maxG: limits.maxG,
+          ascentFailureFraction: gCrossing?.fraction ?? 0.72,
+          effectiveVibG: Number(effectiveVibG.toFixed(2)),
+        },
+        140
       );
     }
 
@@ -968,6 +1057,7 @@ export class OrbitMechanics {
       launchSiteId: resolvedSite.id,
       launchSiteName: resolvedSite.name,
       launchAzimuthDeg: dvBreakdown.azimuthDeg,
+      targetInclDeg: dvBreakdown.targetInclDeg,
       rotationBonusMs: dvBreakdown.rotationBonusMs,
       planeChangeDeltaVMs: dvBreakdown.planeChangeDeltaVMs,
       azimuthPenaltyMs: dvBreakdown.azimuthPenaltyMs,
@@ -979,6 +1069,7 @@ export class OrbitMechanics {
       twr: Number(twr.toFixed(2)),
       maxQPa,
       peakLaunchG: peakG,
+      ascentGCurve: ascentProfile.samples,
       cruiseDays,
       commsDelaySec: Number(commsDelaySec.toFixed(2)),
       minPowerMarginW: Math.round(cruisePowerMarginW),

@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { AssetLoader } from "../../shared/utils/AssetLoader.js";
+import { getInstruments } from "../mission-science/data/instruments.js";
 import { KennedyHangarScene } from "./models/KennedyHangarScene.js";
 import { Spacecraft } from "./models/Spacecraft.js";
 import { SpacecraftConfig } from "./logic/SpacecraftConfig.js";
@@ -45,7 +46,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const hangar = new KennedyHangarScene();
   bayGroup.add(hangar.build());
 
-  sceneManager.scene.background = new THREE.Color(0x60a5fa);
+  sceneManager.scene.background = new THREE.Color(0x050b1b);
   sceneManager.addObject(bayGroup);
 
   const controls = new OrbitControls(sceneManager.camera, sceneManager.renderer.domElement);
@@ -55,8 +56,9 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   controls.maxDistance = 8.8;
   controls.minPolarAngle = Math.PI * 0.16;
   controls.maxPolarAngle = Math.PI * 0.495;
-  controls.target.set(0, -0.05, 0);
-  sceneManager.setCamera(new THREE.Vector3(2.1, 1.05, 6.2), controls.target);
+  controls.target.set(0.55, -0.05, 0);
+  const DEFAULT_CAM_POS = new THREE.Vector3(2.35, 1.05, 6.2);
+  sceneManager.setCamera(DEFAULT_CAM_POS.clone(), controls.target);
   controls.update();
 
   // Restore previous spacecraft selection if player returns to Design phase
@@ -65,13 +67,69 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const spacecraft = new Spacecraft({ assetLoader });
   bayGroup.add(spacecraft.getGroup());
 
-  const configurator = new SpacecraftConfigurator(uiContainer, {
+  let assemblyPulse = 0;
+
+  const zoomCamera = (factor) => {
+    const offset = sceneManager.camera.position.clone().sub(controls.target);
+    const nextLen = THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance);
+    offset.setLength(nextLen);
+    sceneManager.camera.position.copy(controls.target).add(offset);
+    controls.update();
+  };
+
+  const resetCamera = () => {
+    controls.target.set(0.55, -0.05, 0);
+    sceneManager.setCamera(DEFAULT_CAM_POS.clone(), controls.target);
+    controls.update();
+  };
+
+  const toggleInstrument = (instrumentId) => {
+    if (!gameState.mission) return;
+    const allInstruments = getInstruments();
+    const currentIds = new Set((gameState.mission.instruments ?? []).map((i) => i.id));
+    if (currentIds.has(instrumentId)) {
+      if (currentIds.size <= 1) return; // Require at least 1 science instrument
+      currentIds.delete(instrumentId);
+    } else {
+      currentIds.add(instrumentId);
+    }
+    const updatedInstruments = allInstruments
+      .filter((inst) => currentIds.has(inst.id))
+      .map((inst) => ({
+        id: inst.id,
+        name: inst.name,
+        massKg: inst.massKg,
+        powerWatts: inst.powerWatts,
+        dataRateKbps: inst.dataRateKbps,
+        costMillions: inst.costMillions,
+        sciencePoints: inst.sciencePoints,
+        model: inst.model,
+      }));
+    gameState.setMission({
+      ...gameState.mission,
+      instruments: updatedInstruments,
+    });
+    assemblyPulse = 1.0;
+    syncSpacecraft();
+  };
+
+  const configurator = new SpacecraftConfigurator(uiContainer, gameState, {
     onSelectComponent: (category, componentId) => {
       config.setComponent(category, componentId);
+      assemblyPulse = 1.0;
       syncSpacecraft();
     },
+    onApplyAutoFix: (nextSelection) => {
+      config.applySelection(nextSelection);
+      assemblyPulse = 1.0;
+      syncSpacecraft();
+    },
+    onToggleInstrument: toggleInstrument,
     onToggleSolar: (deployed) => spacecraft.setSolarDeployed(deployed),
     onToggleThrust: (active) => spacecraft.setThrustActive(active),
+    onZoomIn: () => zoomCamera(0.82),
+    onZoomOut: () => zoomCamera(1.22),
+    onResetView: resetCamera,
     onProceed: options.onProceed,
   });
 
@@ -121,6 +179,15 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
       elapsedSec += dt;
       return elapsedSec;
     },
+    stepPulse: (dt) => {
+      if (assemblyPulse > 0) {
+        assemblyPulse = Math.max(0, assemblyPulse - dt * 3.2);
+        const s = 1 + Math.sin(assemblyPulse * Math.PI) * 0.035;
+        spacecraft.getGroup().scale.setScalar(s);
+      } else {
+        spacecraft.getGroup().scale.setScalar(1);
+      }
+    },
   };
 }
 
@@ -132,6 +199,7 @@ export function update(deltaTime) {
   if (!activeState) return;
   const elapsed = activeState.addElapsed(deltaTime);
   activeState.controls.update();
+  activeState.stepPulse(deltaTime);
   activeState.spacecraft.update(deltaTime);
   activeState.hangar.update(deltaTime, elapsed);
 }
