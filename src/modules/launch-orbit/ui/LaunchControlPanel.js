@@ -150,6 +150,7 @@ export class LaunchControlPanel {
         <div class="lo-telem-grid">
           <div><span>Altitude</span><strong>${alt.toLocaleString()} km</strong></div>
           <div><span>Velocity</span><strong>${vel} km/s</strong></div>
+          <div><span>Active Propulsion</span><strong>${this._escape(telemetry.activeStage ?? "Stage 1 Booster")}</strong></div>
           <div><span>Sim Speed</span><strong>${this._speed}x</strong></div>
         </div>
       `;
@@ -216,10 +217,24 @@ export class LaunchControlPanel {
             <div class="lo-chips">
               <span class="${massOk ? "" : "lo-chip-warn"}">Cap: ${r.maxPayloadLeoKg} kg</span>
               <span>Δv: ${(r.launcherDeltaVMs / 1000).toFixed(1)} km/s</span>
+              <span>${r.stages?.length ?? 2}-Stage (${r.stages?.[0]?.engineCount}x eng)</span>
               <span>Fairing: ${r.fairingDiameterM} m</span>
               <span>Max ${r.peakLaunchG}g</span>
               <span>TWR: ${twr.toFixed(2)}</span>
             </div>
+            ${
+              selected && r.stages?.length
+                ? `
+              <div class="lo-stage-breakdown" style="margin-top:6px; font-size:11px; color:#94a3b8; border-top:1px solid rgba(255,255,255,0.08); padding-top:4px;">
+                ${r.stages
+                  .map(
+                    (s, i) =>
+                      `<div><strong>S${i + 1}:</strong> ${this._escape(s.name)} · ${s.propellantType} · Isp ${s.ispVacuumS}s</div>`
+                  )
+                  .join("")}
+              </div>`
+                : ""
+            }
           </button>
         `;
       })

@@ -113,9 +113,9 @@ export class PlanetScene {
     this.dispose();
     this._launchSite = getLaunchSiteById(launchSite);
 
-    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x0f172a, 0.7);
-    const sun = new THREE.DirectionalLight(0xffffff, 2.35);
-    sun.position.set(16, 10, 18);
+    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x0f172a, 0.55);
+    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    sun.position.set(18, 10, 14);
     const rim = new THREE.DirectionalLight(0x38bdf8, 0.45);
     rim.position.set(-14, -4, -10);
     this.group.add(hemi, sun, rim);
