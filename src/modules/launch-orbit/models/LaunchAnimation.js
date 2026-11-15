@@ -30,6 +30,7 @@ export class LaunchAnimation {
     this._failed = false;
     this._failureTriggered = false;
     this._failureHoldSec = 0;
+    this._secondaryBlastOrigin = null;
     this._orbitAngle = 0;
 
     this._rocket = null;
@@ -83,6 +84,7 @@ export class LaunchAnimation {
     this._failed = false;
     this._failureTriggered = false;
     this._failureHoldSec = 0;
+    this._secondaryBlastOrigin = null;
     this._activePhaseIndex = -1;
     this._orbitAngle =
       this._orbit?.id === "LEO"
@@ -136,12 +138,16 @@ export class LaunchAnimation {
 
     if (this._failureTriggered) {
       this._failureHoldSec += dt;
+      if (this._secondaryBlastOrigin && this._failureHoldSec >= 0.28 / this.speedMultiplier) {
+        this._spawnExplosion(this._secondaryBlastOrigin, 0.55, false);
+        this._secondaryBlastOrigin = null;
+      }
       // Keep tumbling detached stack slowly only if still intact
       if (this._stackGroup && this._stackGroup.visible) {
         this._stackGroup.rotation.z += dt * 1.4;
         this._stackGroup.rotation.x += dt * 0.9;
       }
-      if (this._failureHoldSec >= 2.6 / this.speedMultiplier) {
+      if (this._failureHoldSec >= 3.0 / this.speedMultiplier) {
         this.running = false;
         this._onComplete?.(this._launchResult);
       }
@@ -217,6 +223,7 @@ export class LaunchAnimation {
     this._orbiting = false;
     this._failed = false;
     this._failureTriggered = false;
+    this._secondaryBlastOrigin = null;
   }
 
   _buildVehicleStack() {
@@ -586,34 +593,47 @@ export class LaunchAnimation {
   _triggerFailure(failedPhase) {
     this._failed = true;
     this._failureTriggered = true;
-    this._cameraShake = 0.65;
+
+    const mode = this._launchResult?.failureMode || "explosion";
+    if (mode === "insufficient-science" || mode === "science-warning") {
+      this._cameraShake = 0;
+      this._onPhaseUpdate?.(this._activePhaseIndex, failedPhase, {
+        failed: false,
+        warning: true,
+        failureMode: mode,
+      });
+      return;
+    }
+
+    this._cameraShake = 0.75;
 
     if (this._rocketPlume) this._rocketPlume.visible = false;
     if (this._machCone) this._machCone.visible = false;
     this._spacecraft?.setThrustActive?.(false);
 
-    const mode = this._launchResult?.failureMode || "explosion";
     const origin = this._stackGroup ? this._stackGroup.position.clone() : new THREE.Vector3();
 
     if (mode === "explosion" || mode === "structural-breakup" || mode === "suborbital-fall") {
-      this._spawnExplosion(origin, mode === "explosion" ? 1.35 : 1.15);
-      // Scatter visual debris fragments from fairings, booster, and shattered spacecraft
-      if (this._fairingLeft?.visible) {
-        this._fairingLeft.visible = false;
-        this._fairingRight.visible = false;
-        this._spawnPartChunk(origin, new THREE.Vector3(-1.8, 1.2, 0.7), 0xf1f5f9, 0.18);
-        this._spawnPartChunk(origin, new THREE.Vector3(1.6, -0.9, 1.1), 0xf1f5f9, 0.18);
-      }
-      if (this._boosterGroup?.visible) {
-        this._boosterGroup.visible = false;
-        this._spawnPartChunk(origin, new THREE.Vector3(0.4, -1.6, -0.8), 0xef4444, 0.22);
-      }
+      const blastScale = mode === "explosion" ? 1.35 : 1.15;
+      this._spawnExplosion(origin, blastScale, true);
+      this._secondaryBlastOrigin = origin.clone().add(
+        new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)
+      );
+
+      // Break the actual spacecraft and vehicle into tumbling parts that fade out and disappear
+      this._shatterGroupIntoParts(this._spacecraftGroup, origin, 1.5, 2.4);
       if (this._spacecraftGroup) {
         this._spacecraftGroup.visible = false;
-        this._spawnPartChunk(origin, new THREE.Vector3(1.4, 1.3, 0.4), 0x1d4ed8, 0.16);
-        this._spawnPartChunk(origin, new THREE.Vector3(-1.3, 1.1, -0.5), 0x1d4ed8, 0.16);
-        this._spawnPartChunk(origin, new THREE.Vector3(0.7, -1.1, 1.2), 0xd4af37, 0.15);
-        this._spawnPartChunk(origin, new THREE.Vector3(-0.9, -0.7, -1.1), 0x94a3b8, 0.14);
+      }
+      if (this._fairingLeft?.visible) {
+        this._shatterGroupIntoParts(this._fairingLeft, origin, 1.8, 2.1);
+        this._shatterGroupIntoParts(this._fairingRight, origin, 1.8, 2.1);
+        this._fairingLeft.visible = false;
+        this._fairingRight.visible = false;
+      }
+      if (this._boosterGroup?.visible) {
+        this._shatterGroupIntoParts(this._boosterGroup, origin, 1.2, 2.3);
+        this._boosterGroup.visible = false;
       }
       if (this._stackGroup) {
         this._stackGroup.visible = false;
@@ -633,35 +653,155 @@ export class LaunchAnimation {
     });
   }
 
-  _spawnExplosion(origin, scale = 1.0) {
-    // Expanding bright fireball core + outer blast shell
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18 * scale, 18, 14),
-      new THREE.MeshBasicMaterial({ color: 0xfef08a, transparent: true, opacity: 0.96 })
-    );
-    core.position.copy(origin);
-    this.root.add(core);
-    this._fireballs.push({ mesh: core, age: 0, maxAge: 1.4, growRate: 3.6 * scale });
+  /**
+   * Detach real 3D child parts of a vehicle/spacecraft group into independent
+   * tumbling debris that fly outward and fade until completely gone.
+   */
+  _shatterGroupIntoParts(sourceGroup, origin, blastSpeed = 1.4, maxAge = 2.4) {
+    if (!sourceGroup || !sourceGroup.children.length) return;
+    sourceGroup.updateMatrixWorld(true);
+    this.root.updateMatrixWorld(true);
 
-    const blast = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24 * scale, 18, 14),
-      new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.85 })
-    );
-    blast.position.copy(origin);
-    this.root.add(blast);
-    this._fireballs.push({ mesh: blast, age: 0, maxAge: 1.8, growRate: 4.8 * scale });
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
 
-    // Shockwave ring
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.2 * scale, 0.03, 10, 32),
-      new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.9 })
-    );
-    ring.position.copy(origin);
-    ring.lookAt(0, 0, 10);
-    this.root.add(ring);
-    this._fireballs.push({ mesh: ring, age: 0, maxAge: 1.2, growRate: 6.5 * scale });
+    for (const child of sourceGroup.children) {
+      if (!child.visible) continue;
+      child.getWorldPosition(worldPos);
+      child.getWorldQuaternion(worldQuat);
+      child.getWorldScale(worldScale);
 
-    this._spawnSparkBurst(origin, 0xf97316, 46);
+      const localPos = this.root.worldToLocal(worldPos.clone());
+      const part = child.clone(true);
+      part.position.copy(localPos);
+      part.quaternion.copy(worldQuat);
+      part.scale.copy(worldScale);
+
+      part.traverse((obj) => {
+        if (obj.userData?.sharedAsset) {
+          obj.userData = { ...obj.userData, sharedAsset: false };
+        }
+        if (obj.material) {
+          const cloneMat = (m) => {
+            const c = m.clone();
+            c.transparent = true;
+            c.opacity = 1;
+            return c;
+          };
+          obj.material = Array.isArray(obj.material)
+            ? obj.material.map(cloneMat)
+            : cloneMat(obj.material);
+        }
+      });
+
+      this.root.add(part);
+
+      const radial = localPos.clone().sub(origin);
+      if (radial.lengthSq() < 1e-4) {
+        radial.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+      }
+      radial.normalize();
+
+      const speed = blastSpeed * (0.75 + Math.random() * 0.9);
+      const vel = radial.multiplyScalar(speed).add(
+        new THREE.Vector3(
+          (Math.random() - 0.5) * 0.9,
+          (Math.random() - 0.5) * 0.9,
+          (Math.random() - 0.5) * 0.9
+        )
+      );
+
+      this._debris.push({
+        mesh: part,
+        vel,
+        spin: new THREE.Vector3(
+          (Math.random() - 0.5) * 7.5,
+          (Math.random() - 0.5) * 7.5,
+          (Math.random() - 0.5) * 7.5
+        ),
+        age: 0,
+        maxAge: maxAge * (0.85 + Math.random() * 0.3),
+        fadeStart: 0.42,
+        drag: 0.45,
+      });
+    }
+  }
+
+  _spawnExplosion(origin, scale = 1.0, includeSmoke = true) {
+    // 1. Blinding white-yellow core flash
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16 * scale, 18, 14),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 })
+    );
+    flash.position.copy(origin);
+    this.root.add(flash);
+    this._fireballs.push({ mesh: flash, age: 0, maxAge: 0.45, growRate: 6.2 * scale });
+
+    // 2. Multi-lobe orange/red plasma fireballs
+    const lobes = [
+      { offset: [0, 0, 0], color: 0xfef08a, r: 0.18, maxAge: 1.0, grow: 3.8 },
+      { offset: [0.09, 0.06, -0.05], color: 0xf97316, r: 0.22, maxAge: 1.45, grow: 4.5 },
+      { offset: [-0.08, -0.05, 0.07], color: 0xef4444, r: 0.2, maxAge: 1.6, grow: 4.1 },
+    ];
+    for (const lobe of lobes) {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(lobe.r * scale, 18, 14),
+        new THREE.MeshBasicMaterial({ color: lobe.color, transparent: true, opacity: 0.88 })
+      );
+      mesh.position.copy(origin).add(
+        new THREE.Vector3(lobe.offset[0] * scale, lobe.offset[1] * scale, lobe.offset[2] * scale)
+      );
+      this.root.add(mesh);
+      this._fireballs.push({
+        mesh,
+        age: 0,
+        maxAge: lobe.maxAge,
+        growRate: lobe.grow * scale,
+      });
+    }
+
+    // 3. Expanding shockwave rings
+    for (let i = 0; i < 2; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.18 * scale, 0.024, 10, 32),
+        new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.85 })
+      );
+      ring.position.copy(origin);
+      ring.rotation.set(i === 0 ? 0.35 : 1.2, i === 0 ? 0.2 : -0.7, 0);
+      this.root.add(ring);
+      this._fireballs.push({ mesh: ring, age: 0, maxAge: 0.9, growRate: 7.5 * scale });
+    }
+
+    // 4. Lingering dark smoke / soot puffs
+    if (includeSmoke) {
+      for (let i = 0; i < 6; i++) {
+        const smoke = new THREE.Mesh(
+          new THREE.SphereGeometry((0.15 + Math.random() * 0.08) * scale, 12, 10),
+          new THREE.MeshBasicMaterial({
+            color: i % 2 === 0 ? 0x1e293b : 0x334155,
+            transparent: true,
+            opacity: 0.55,
+          })
+        );
+        smoke.position.copy(origin).add(
+          new THREE.Vector3(
+            (Math.random() - 0.5) * 0.25 * scale,
+            (Math.random() - 0.5) * 0.25 * scale,
+            (Math.random() - 0.5) * 0.25 * scale
+          )
+        );
+        this.root.add(smoke);
+        this._fireballs.push({
+          mesh: smoke,
+          age: 0,
+          maxAge: 2.1 + Math.random() * 0.5,
+          growRate: (2.2 + Math.random() * 1.1) * scale,
+        });
+      }
+    }
+
+    this._spawnSparkBurst(origin, 0xf97316, includeSmoke ? 54 : 26);
   }
 
   _spawnSparkBurst(origin, color, count = 32) {
@@ -712,14 +852,24 @@ export class LaunchAnimation {
     for (let i = this._debris.length - 1; i >= 0; i--) {
       const d = this._debris[i];
       d.age += dt;
+      if (d.drag) {
+        d.vel.multiplyScalar(Math.max(0, 1 - d.drag * dt));
+      }
       d.mesh.position.addScaledVector(d.vel, dt);
       d.mesh.rotation.x += d.spin.x * dt;
       d.mesh.rotation.y += d.spin.y * dt;
       d.mesh.rotation.z += d.spin.z * dt;
       const t = d.age / d.maxAge;
-      if (d.mesh.material) {
-        d.mesh.material.opacity = Math.max(0, 1 - t);
-      }
+      const fadeStart = d.fadeStart ?? 0;
+      const opacity =
+        t <= fadeStart ? 1 : Math.max(0, 1 - (t - fadeStart) / Math.max(1e-4, 1 - fadeStart));
+      d.mesh.traverse((obj) => {
+        if (!obj.material) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((m) => {
+          m.opacity = opacity;
+        });
+      });
       if (d.age >= d.maxAge) {
         this.root.remove(d.mesh);
         this._disposeObject(d.mesh);

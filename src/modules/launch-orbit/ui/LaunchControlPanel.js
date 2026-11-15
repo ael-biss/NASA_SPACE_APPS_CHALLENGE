@@ -256,6 +256,21 @@ export class LaunchControlPanel {
         `
         : "";
 
+    const sciencePoints = (mission?.instruments ?? []).reduce(
+      (sum, inst) => sum + (inst.sciencePoints || 0),
+      0
+    );
+    const minSciencePoints = mission?.minSciencePoints ?? 0;
+    const hasScienceDeficit = minSciencePoints > 0 && sciencePoints < minSciencePoints;
+    const scienceWarnHtml = hasScienceDeficit
+      ? `
+        <div class="lo-science-warn">
+          <strong>⚠ Science Warning (${sciencePoints} / ${minSciencePoints} pts):</strong>
+          <span>Insufficient scientific points — spacecraft will not explode, but mission science objectives will fail.</span>
+        </div>
+      `
+      : "";
+
     this._root.innerHTML = `
       <aside class="lo-panel lo-panel-left">
         <header class="lo-header">
@@ -281,6 +296,7 @@ export class LaunchControlPanel {
             <div><span>Total Cost</span><strong class="${totalMissionCost <= budgetCap ? "lo-ok" : "lo-warn"}">$${totalMissionCost.toFixed(1)}M / $${budgetCap}M</strong></div>
           </div>
           ${prelaunchWarnHtml}
+          ${scienceWarnHtml}
           <div class="lo-btn-row">
             <button type="button" class="lo-cta" data-action="launch" ${this._flightActive || !spacecraft ? "disabled" : ""}>
               ${this._flightActive ? "Launching..." : this._flightComplete ? "Re-Launch Vehicle" : "Launch Mission 🚀"}
@@ -312,9 +328,27 @@ export class LaunchControlPanel {
             this._flightComplete && this._lastResult
               ? `
             <footer class="lo-footer">
-              <div class="lo-result-banner ${this._lastResult.success ? "lo-banner-ok" : "lo-banner-err"}">
-                <strong>${this._lastResult.success ? "MISSION ORBIT ACHIEVED" : `FAILED AT ${this._escape(this._lastResult.failedPhaseId?.toUpperCase() || "LAUNCH")}`}</strong>
-                <p>${this._escape(this._lastResult.success ? "All 7 flight phases nominal." : this._lastResult.failureCause)}</p>
+              <div class="lo-result-banner ${
+                this._lastResult.success
+                  ? hasScienceDeficit
+                    ? "lo-banner-warn"
+                    : "lo-banner-ok"
+                  : "lo-banner-err"
+              }">
+                <strong>${
+                  this._lastResult.success
+                    ? hasScienceDeficit
+                      ? "⚠ ORBIT ACHIEVED · INSUFFICIENT SCIENCE POINTS"
+                      : "MISSION ORBIT ACHIEVED"
+                    : `FAILED AT ${this._escape(this._lastResult.failedPhaseId?.toUpperCase() || "LAUNCH")}`
+                }</strong>
+                <p>${this._escape(
+                  this._lastResult.success
+                    ? hasScienceDeficit
+                      ? `Spacecraft reached orbit safely without exploding, but only ${sciencePoints}/${minSciencePoints} science points were collected.`
+                      : "All 7 flight phases nominal."
+                    : this._lastResult.failureCause
+                )}</p>
               </div>
               <div class="lo-btn-row">
                 <button type="button" class="lo-cta" data-action="view-results">View Full Report →</button>
@@ -567,8 +601,18 @@ export class LaunchControlPanel {
       .lo-phase-fix { font-size: 11px; color: #fde68a; margin-top: 4px; }
       .lo-result-banner { padding: 8px 10px; border-radius: 8px; font-size: 11px; }
       .lo-banner-ok { background: rgba(34, 197, 94, 0.16); border: 1px solid rgba(34, 197, 94, 0.45); color: #86efac; }
+      .lo-banner-warn { background: rgba(245, 158, 11, 0.16); border: 1px solid rgba(245, 158, 11, 0.5); color: #fde68a; }
       .lo-banner-err { background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(239, 68, 68, 0.45); color: #fca5a5; }
       .lo-result-banner p { margin-top: 3px; color: #e2e8f0; line-height: 1.35; }
+      .lo-science-warn {
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: rgba(245, 158, 11, 0.16);
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        color: #fde68a;
+        font-size: 10.5px;
+      }
+      .lo-science-warn span { display: block; margin-top: 2px; color: #fef3c7; }
       .lo-prelaunch-warn {
         max-height: 68px;
         overflow-y: auto;

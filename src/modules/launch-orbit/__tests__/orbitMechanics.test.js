@@ -693,3 +693,41 @@ test("LaunchAnimation completely destroys spacecraft and vehicle stack on explos
   anim.dispose?.();
   anim.reset();
 });
+
+test("LaunchAnimation breaks multi-part spacecraft into disappearing parts on explosion and skips explosion on insufficient-science", () => {
+  const scGroup = new THREE.Group();
+  scGroup.name = "assembled-spacecraft";
+  const bus = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial());
+  const solar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 0.4), new THREE.MeshStandardMaterial());
+  scGroup.add(bus, solar);
+
+  const anim = new LaunchAnimation();
+  let warnMeta = null;
+  anim.setSpeed(4);
+  anim.start(
+    { id: "medium-orbital" },
+    { group: scGroup },
+    getOrbitById("LEO"),
+    {
+      success: false,
+      failureMode: "insufficient-science",
+      phases: [{ id: "liftoff", status: "failed" }],
+    },
+    {
+      onPhaseUpdate: (_idx, _phase, meta) => {
+        if (meta?.warning) warnMeta = meta;
+      },
+    }
+  );
+
+  for (let i = 0; i < 120 && !warnMeta; i++) {
+    anim.update(0.08);
+  }
+  assert.ok(warnMeta, "insufficient-science must emit warning telemetry");
+  assert.equal(warnMeta.failed, false);
+  assert.equal(anim._fireballs.length, 0, "insufficient-science must not spawn explosion fireballs");
+  assert.equal(scGroup.visible, true, "insufficient-science must keep spacecraft visible");
+
+  anim.dispose?.();
+  anim.reset();
+});
