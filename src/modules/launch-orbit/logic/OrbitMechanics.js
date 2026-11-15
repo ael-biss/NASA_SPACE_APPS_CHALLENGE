@@ -278,7 +278,7 @@ export class OrbitMechanics {
    * @param {Object | string} rocket
    * @param {import('../../../shared/interfaces/SpacecraftSpec.js').SpacecraftSpec} spacecraftSpec
    * @param {Object | string} targetOrbit
-   * @param {{ fairingId?: string, missionSpec?: Object | null }} [options]
+   * @param {{ fairingId?: string, launchSite?: string | Object, launchSiteId?: string, missionSpec?: Object | null, allowInvalid?: boolean }} [options]
    * @returns {import('../../../shared/interfaces/LaunchResult.js').LaunchResult}
    */
   simulateLaunch(rocket, spacecraftSpec, targetOrbit, options = {}) {
@@ -327,7 +327,7 @@ export class OrbitMechanics {
       return result;
     }
 
-    if (spacecraftSpec.isValid === false) {
+    if (spacecraftSpec.isValid === false && !options.allowInvalid) {
       const errorList = Array.isArray(spacecraftSpec.errors)
         ? spacecraftSpec.errors.filter((e) => typeof e === "string" && e.trim())
         : [];
@@ -487,18 +487,26 @@ export class OrbitMechanics {
       );
     }
 
-    const carriedRatio =
-      spacecraftSpec.maxPayloadMassKg > 0
-        ? (spacecraftSpec.carriedMassKg ?? spacecraftSpec.totalMassKg) / spacecraftSpec.maxPayloadMassKg
-        : 0.5;
+    const carriedMassKg =
+      typeof spacecraftSpec.carriedMassKg === "number"
+        ? spacecraftSpec.carriedMassKg
+        : spacecraftSpec.totalMassKg;
+    const maxBusLoadKg = spacecraftSpec.maxPayloadMassKg ?? 0;
+    const carriedRatio = maxBusLoadKg > 0 ? carriedMassKg / maxBusLoadKg : 0.5;
     const aeroStressKpa = maxQKpa * (0.75 + carriedRatio * 0.35);
     if (aeroStressKpa > limits.structuralStrengthKpa) {
       health.structure = 0;
+      const overloadNote =
+        typeof spacecraftSpec.carriedMassKg === "number" &&
+        maxBusLoadKg > 0 &&
+        spacecraftSpec.carriedMassKg > maxBusLoadKg
+          ? ` Carried mass (${Math.round(spacecraftSpec.carriedMassKg)} kg) exceeds bus limit (${maxBusLoadKg} kg).`
+          : "";
       return failAtPhase(
         "max-q",
         "2. Max-Q Aerodynamic Load",
         `Aero stress ${aeroStressKpa.toFixed(1)} kPa > ${limits.structuralStrengthKpa} kPa`,
-        `Combined Max-Q buffeting (${aeroStressKpa.toFixed(1)} kPa) buckled the bus structure (limit ${limits.structuralStrengthKpa} kPa).`,
+        `Combined Max-Q buffeting (${aeroStressKpa.toFixed(1)} kPa) buckled the bus structure (limit ${limits.structuralStrengthKpa} kPa).${overloadNote}`,
         `Upgrade to a stronger spacecraft bus structure or reduce carried mass.`,
         "structural-breakup",
         { maxQKpa, aeroStressKpa: Number(aeroStressKpa.toFixed(1)) },
@@ -548,6 +556,28 @@ export class OrbitMechanics {
         `Select the Acoustic-Damped Heavy Fairing (cuts vibration 38%) or choose a smoother liquid launcher.`,
         "structural-breakup",
         { peakG, effectiveVibG: Number(effectiveVibG.toFixed(2)), limit: limits.vibrationLimitG },
+        0
+      );
+    }
+
+    if (
+      typeof spacecraftSpec.carriedMassKg === "number" &&
+      spacecraftSpec.maxPayloadMassKg > 0 &&
+      spacecraftSpec.carriedMassKg > spacecraftSpec.maxPayloadMassKg
+    ) {
+      health.structure = 0;
+      return failAtPhase(
+        "ascent",
+        "3. Ascent & Staging",
+        `Bus load ${Math.round(spacecraftSpec.carriedMassKg)} kg > ${spacecraftSpec.maxPayloadMassKg} kg limit`,
+        `Carried mass (${Math.round(spacecraftSpec.carriedMassKg)} kg) exceeded the bus structural limit (${spacecraftSpec.maxPayloadMassKg} kg) under ${peakG.toFixed(1)} g ascent loads, collapsing the chassis.`,
+        `Upgrade to a larger spacecraft bus structure or reduce subsystems, propellant, or payload mass.`,
+        "structural-breakup",
+        {
+          carriedMassKg: Math.round(spacecraftSpec.carriedMassKg),
+          maxPayloadMassKg: spacecraftSpec.maxPayloadMassKg,
+          peakG,
+        },
         0
       );
     }
@@ -841,6 +871,7 @@ export class OrbitMechanics {
     }
 
     if (spacecraftSpec.maxDataRateKbps < requiredDataRate) {
+      health.antenna = Math.min(health.antenna, 25);
       return failAtPhase(
         "cruise",
         "6. Cruise, Thermal & Deep-Space Ops",

@@ -9,6 +9,7 @@ import {
   ALL_SUBSYSTEM_CATEGORIES,
   getComponentsByCategory,
 } from "../data/components.js";
+import { validateSpacecraftSpec } from "../../../shared/interfaces/SpacecraftSpec.js";
 import {
   formatBudget,
   formatDeltaV,
@@ -154,7 +155,7 @@ export class SpacecraftConfigurator {
     `;
 
     const massRatio = spacecraftSpec.maxPayloadMassKg
-      ? Math.min(100, (spacecraftSpec.carriedMassKg / spacecraftSpec.maxPayloadMassKg) * 100)
+      ? (spacecraftSpec.carriedMassKg / spacecraftSpec.maxPayloadMassKg) * 100
       : 0;
     const powerRatio = spacecraftSpec.powerGeneratedWatts
       ? Math.min(100, (spacecraftSpec.powerConsumedWatts / spacecraftSpec.powerGeneratedWatts) * 100)
@@ -194,9 +195,18 @@ export class SpacecraftConfigurator {
     validationEl.innerHTML = items.join("");
 
     if (proceedEl) {
+      const canProceed = validateSpacecraftSpec(spacecraftSpec, {
+        allowCompatibilityErrors: true,
+      }).valid;
+      const errCount = Array.isArray(spacecraftSpec.errors) ? spacecraftSpec.errors.length : 0;
+      const hasErrors = !spacecraftSpec.isValid || errCount > 0;
+      const ctaLabel =
+        canProceed && hasErrors
+          ? `Proceed to Launch &amp; Orbit (${errCount || 1} Error${errCount === 1 ? "" : "s"}) →`
+          : "Proceed to Launch &amp; Orbit →";
       proceedEl.innerHTML = this.handlers.onProceed
-        ? `<button type="button" class="sc-cta" data-action="proceed-launch" ${spacecraftSpec.isValid ? "" : "disabled"}>
-            Proceed to Launch &amp; Orbit →
+        ? `<button type="button" class="sc-cta ${canProceed && hasErrors ? "sc-cta-warn" : ""}" data-action="proceed-launch" ${canProceed ? "" : "disabled"}>
+            ${ctaLabel}
           </button>`
         : "";
     }
@@ -547,6 +557,10 @@ export class SpacecraftConfigurator {
         font-weight: 700;
         font-size: 13px;
         cursor: pointer;
+      }
+      .sc-cta-warn {
+        border-color: #f59e0b;
+        background: linear-gradient(135deg, #b45309, #d97706);
       }
       .sc-cta:disabled {
         opacity: 0.45;

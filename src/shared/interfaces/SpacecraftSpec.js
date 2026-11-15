@@ -129,11 +129,13 @@ export function createDefaultSpacecraftSpec() {
 
 /**
  * Validate that a SpacecraftSpec contains complete subsystem selections, valid bounds,
- * and no blocking engineering compatibility errors.
+ * and (unless `allowCompatibilityErrors` is true) no blocking engineering compatibility errors.
  * @param {SpacecraftSpec | null} spec
+ * @param {{ allowCompatibilityErrors?: boolean }} [options]
  * @returns {{ valid: boolean, errors: string[] }}
  */
-export function validateSpacecraftSpec(spec) {
+export function validateSpacecraftSpec(spec, options = {}) {
+  const { allowCompatibilityErrors = false } = options;
   if (!spec || typeof spec !== "object") {
     return { valid: false, errors: ["No spacecraft configuration provided."] };
   }
@@ -145,7 +147,7 @@ export function validateSpacecraftSpec(spec) {
     }
   };
 
-  if (Array.isArray(spec.errors)) {
+  if (!allowCompatibilityErrors && Array.isArray(spec.errors)) {
     for (const err of spec.errors) {
       addError(err);
     }
@@ -173,26 +175,28 @@ export function validateSpacecraftSpec(spec) {
     ) {
       addError("Spacecraft total wet mass cannot be less than dry mass.");
     }
-    if (
-      typeof spec.maxPayloadMassKg === "number" &&
-      spec.maxPayloadMassKg > 0 &&
-      typeof spec.carriedMassKg === "number" &&
-      spec.carriedMassKg > spec.maxPayloadMassKg &&
-      !errors.some((e) => e.includes("exceeds") || e.includes("limit"))
-    ) {
-      addError("Carried mass exceeds bus structural payload limit.");
-    }
-    if (
-      typeof spec.powerGeneratedWatts === "number" &&
-      typeof spec.powerConsumedWatts === "number" &&
-      spec.powerGeneratedWatts < spec.powerConsumedWatts &&
-      !errors.some((e) => e.toLowerCase().includes("power"))
-    ) {
-      addError("Power generated is insufficient for total power consumption.");
+    if (!allowCompatibilityErrors) {
+      if (
+        typeof spec.maxPayloadMassKg === "number" &&
+        spec.maxPayloadMassKg > 0 &&
+        typeof spec.carriedMassKg === "number" &&
+        spec.carriedMassKg > spec.maxPayloadMassKg &&
+        !errors.some((e) => e.includes("exceeds") || e.includes("limit"))
+      ) {
+        addError("Carried mass exceeds bus structural payload limit.");
+      }
+      if (
+        typeof spec.powerGeneratedWatts === "number" &&
+        typeof spec.powerConsumedWatts === "number" &&
+        spec.powerGeneratedWatts < spec.powerConsumedWatts &&
+        !errors.some((e) => e.toLowerCase().includes("power"))
+      ) {
+        addError("Power generated is insufficient for total power consumption.");
+      }
     }
   }
 
-  if (spec.isValid === false && errors.length === 0) {
+  if (!allowCompatibilityErrors && spec.isValid === false && errors.length === 0) {
     addError("Spacecraft configuration failed compatibility checks.");
   }
 

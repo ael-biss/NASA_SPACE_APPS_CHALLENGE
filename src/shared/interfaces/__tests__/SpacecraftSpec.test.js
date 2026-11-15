@@ -89,3 +89,26 @@ test("validateSpacecraftSpec catches numeric, mass, and power bound violations",
   assert.ok(result.errors.some((e) => e.includes("Power generated")));
   assert.ok(result.errors.some((e) => e.includes("costMillions")));
 });
+
+test("validateSpacecraftSpec allows compatibility errors when allowCompatibilityErrors is true", () => {
+  const config = new SpacecraftConfig({
+    ...DEFAULT_SELECTION,
+    structureId: "cubesat-6u", // 45 kg bus limit exceeded by default subsystems
+  });
+  const overloadedSpec = config.toSpacecraftSpec();
+  assert.equal(overloadedSpec.isValid, false);
+  assert.ok(overloadedSpec.errors.some((e) => e.includes("exceeds CubeSat 6U Bus limit")));
+
+  assert.equal(validateSpacecraftSpec(overloadedSpec).valid, false);
+  assert.deepEqual(
+    validateSpacecraftSpec(overloadedSpec, { allowCompatibilityErrors: true }),
+    { valid: true, errors: [] }
+  );
+
+  // Still rejects missing subsystems or invalid zero/negative masses even when allowing compatibility errors
+  const incomplete = createDefaultSpacecraftSpec();
+  assert.equal(
+    validateSpacecraftSpec(incomplete, { allowCompatibilityErrors: true }).valid,
+    false
+  );
+});

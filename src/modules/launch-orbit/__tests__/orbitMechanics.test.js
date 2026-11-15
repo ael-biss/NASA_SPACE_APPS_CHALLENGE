@@ -201,6 +201,42 @@ test("OrbitMechanics.simulateLaunch integrates with MissionEvaluator and rejects
   assert.equal(failedLaunch.success, false);
   assert.ok(failedLaunch.failureReason.includes("pre-launch"));
 
+  // With allowInvalid: true (used by Launch & Orbit UI), simulator executes flight phases so player sees physical failure & results
+  const simulatedInvalidLaunch = mechanics.simulateLaunch("medium-orbital", invalidSpec, "LEO", {
+    allowInvalid: true,
+  });
+  assert.equal(simulatedInvalidLaunch.success, false);
+  assert.equal(simulatedInvalidLaunch.failedPhaseId, "max-q");
+  assert.equal(simulatedInvalidLaunch.failureMode, "structural-breakup");
+  assert.equal(simulatedInvalidLaunch.componentHealth.structure, 0);
+  assert.equal(simulatedInvalidLaunch.phases[0].status, "passed");
+  assert.equal(simulatedInvalidLaunch.phases[1].status, "failed");
+  assert.ok(simulatedInvalidLaunch.failureCause.includes("exceeds bus limit"));
+
+  // Mild CubeSat 6U overload (e.g. 50 kg > 45 kg) on low-MaxQ launcher still fails structurally during ascent
+  const mildOverloadSpec = {
+    ...new SpacecraftConfig({
+      structureId: "cubesat-6u",
+      solarPanelId: "fixed-body",
+      batteryId: "li-ion-compact",
+      propulsionId: "cold-gas",
+      antennaId: "s-band-patch",
+      avionicsId: "basic-obc",
+    }).toSpacecraftSpec(),
+    carriedMassKg: 50,
+    totalMassKg: 62,
+    isValid: false,
+    errors: ["Carried mass (50 kg) exceeds CubeSat 6U Bus limit (45 kg)."],
+  };
+  const mildOverloadLaunch = mechanics.simulateLaunch("super-heavy", mildOverloadSpec, "LEO", {
+    allowInvalid: true,
+  });
+  assert.equal(mildOverloadLaunch.success, false);
+  assert.equal(mildOverloadLaunch.failedPhaseId, "ascent");
+  assert.equal(mildOverloadLaunch.failureMode, "structural-breakup");
+  assert.equal(mildOverloadLaunch.componentHealth.structure, 0);
+  assert.ok(mildOverloadLaunch.failureCause.includes("exceeded the bus structural limit"));
+
   // Valid mission end-to-end
   const missionSpec = {
     missionId: "MISSION_EARTH_LEO",

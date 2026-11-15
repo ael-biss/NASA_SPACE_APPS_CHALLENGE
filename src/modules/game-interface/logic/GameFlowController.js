@@ -55,7 +55,9 @@ export class GameFlowController {
     if (targetPhase === "launch") {
       const mCheck = validateMissionSpec(this.gameState.mission);
       if (!mCheck.valid) return { allowed: false, reason: mCheck.errors[0] ?? "" };
-      const sCheck = validateSpacecraftSpec(this.gameState.spacecraft);
+      const sCheck = validateSpacecraftSpec(this.gameState.spacecraft, {
+        allowCompatibilityErrors: true,
+      });
       return {
         allowed: sCheck.valid,
         reason: sCheck.errors[0] ?? "",

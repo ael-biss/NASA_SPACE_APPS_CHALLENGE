@@ -75,6 +75,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
       fairingId,
       launchSite,
       missionSpec: gameState.mission,
+      allowInvalid: true,
     });
     gameState.setLaunch(launchResult);
 

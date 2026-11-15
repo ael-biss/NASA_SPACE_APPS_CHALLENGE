@@ -29,7 +29,11 @@ export class MissionResultsModal {
    * @param {{ onModifyDesign: () => void, onReplayLaunch?: () => void, onNewMission: () => void }} actions
    */
   show(evaluationResult, launchResult, actions) {
-    const passed = Boolean(launchResult?.success) && evaluationResult.score >= 70;
+    const allChecksPassed =
+      !Array.isArray(evaluationResult.checks) ||
+      evaluationResult.checks.length === 0 ||
+      evaluationResult.checks.every((c) => c.passed);
+    const passed = Boolean(launchResult?.success) && evaluationResult.score >= 70 && allChecksPassed;
     const failedPhase = launchResult?.phases?.find((p) => p.status === "failed");
 
     const failureReportHtml =

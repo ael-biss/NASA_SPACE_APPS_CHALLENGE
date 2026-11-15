@@ -242,6 +242,19 @@ export class LaunchControlPanel {
       .join("");
 
     const showTimeline = this._flightActive || this._flightComplete;
+    const prelaunchErrors =
+      spacecraft && spacecraft.isValid === false && Array.isArray(spacecraft.errors)
+        ? spacecraft.errors.filter((e) => typeof e === "string" && e.trim())
+        : [];
+    const prelaunchWarnHtml =
+      prelaunchErrors.length > 0
+        ? `
+          <div class="lo-prelaunch-warn">
+            <strong>Spacecraft Engineering Error${prelaunchErrors.length > 1 ? "s" : ""} (Test Flight):</strong>
+            ${prelaunchErrors.map((err) => `<span>• ${this._escape(err)}</span>`).join("")}
+          </div>
+        `
+        : "";
 
     this._root.innerHTML = `
       <aside class="lo-panel lo-panel-left">
@@ -267,6 +280,7 @@ export class LaunchControlPanel {
             <div><span>Spacecraft Mass</span><strong>${Math.round(scMass)} / ${selectedRocket.maxPayloadLeoKg} kg</strong></div>
             <div><span>Total Cost</span><strong class="${totalMissionCost <= budgetCap ? "lo-ok" : "lo-warn"}">$${totalMissionCost.toFixed(1)}M / $${budgetCap}M</strong></div>
           </div>
+          ${prelaunchWarnHtml}
           <div class="lo-btn-row">
             <button type="button" class="lo-cta" data-action="launch" ${this._flightActive || !spacecraft ? "disabled" : ""}>
               ${this._flightActive ? "Launching..." : this._flightComplete ? "Re-Launch Vehicle" : "Launch Mission 🚀"}
@@ -555,6 +569,21 @@ export class LaunchControlPanel {
       .lo-banner-ok { background: rgba(34, 197, 94, 0.16); border: 1px solid rgba(34, 197, 94, 0.45); color: #86efac; }
       .lo-banner-err { background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(239, 68, 68, 0.45); color: #fca5a5; }
       .lo-result-banner p { margin-top: 3px; color: #e2e8f0; line-height: 1.35; }
+      .lo-prelaunch-warn {
+        max-height: 68px;
+        overflow-y: auto;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: rgba(239, 68, 68, 0.16);
+        border: 1px solid rgba(239, 68, 68, 0.45);
+        color: #fca5a5;
+        font-size: 10.5px;
+        line-height: 1.35;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .lo-prelaunch-warn strong { color: #fecaca; }
     `;
     document.head.appendChild(style);
   }
