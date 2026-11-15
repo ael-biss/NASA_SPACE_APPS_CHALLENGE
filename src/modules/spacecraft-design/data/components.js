@@ -43,7 +43,7 @@ export const SPACECRAFT_COMPONENTS = {
       width: 0.65,
       height: 0.95,
       depth: 0.55,
-      color: 0xd4af37,
+      color: 0xe2e8f0,
       description: "Lightweight modular 6U frame suited for low-cost LEO tech demos.",
     },
     {
@@ -61,7 +61,7 @@ export const SPACECRAFT_COMPONENTS = {
       width: 1.15,
       height: 1.25,
       depth: 1.15,
-      color: 0xc9a227,
+      color: 0xe5e9f0,
       description: "Balanced hexagonal bus with thermal MLI foil and good payload capacity.",
     },
     {
@@ -79,7 +79,7 @@ export const SPACECRAFT_COMPONENTS = {
       width: 1.55,
       height: 1.7,
       depth: 1.55,
-      color: 0xb0bec5,
+      color: 0xcbd5e1,
       description: "Octagonal aluminum-honeycomb bus built for GEO and lunar payloads.",
     },
     {
@@ -97,7 +97,7 @@ export const SPACECRAFT_COMPONENTS = {
       width: 2.0,
       height: 2.1,
       depth: 2.0,
-      color: 0xe0b94a,
+      color: 0xd8dee9,
       description: "Reinforced deep-space chassis capable of carrying heavy propellant and dishes.",
     },
   ],

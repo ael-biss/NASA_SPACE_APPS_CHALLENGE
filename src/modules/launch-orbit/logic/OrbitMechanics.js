@@ -16,6 +16,7 @@ import {
 } from "../data/launchSites.js";
 import { getOrbitById } from "../data/orbits.js";
 import { getFairingById, getRocketById } from "../data/rockets.js";
+import { calculateMultiStageDeltaV } from "./RocketPhysics.js";
 
 const LEO_REFERENCE_ALTITUDE_KM = 500;
 const LEO_ASCENT_LOSSES_MS = 1783.44;
@@ -356,6 +357,12 @@ export class OrbitMechanics {
     const fairingMassKg = resolvedFairing?.massKg ?? 0;
     const effectivePayloadKg = spacecraftSpec.totalMassKg + fairingMassKg;
 
+    const stageCalc = calculateMultiStageDeltaV(
+      resolvedRocket,
+      spacecraftSpec.totalMassKg,
+      fairingMassKg
+    );
+
     const dvBreakdown = this.calculateSiteDeltaVBreakdown(resolvedOrbit, resolvedSite);
     const requiredDeltaV = dvBreakdown.effectiveDeltaVMs;
     const spacecraftDeltaV = this.calculateSpacecraftDeltaV(spacecraftSpec);
@@ -386,6 +393,10 @@ export class OrbitMechanics {
       result.success = false;
       result.achievedAltitudeKm = achievedAlt;
       result.remainingDeltaVMs = 0;
+      result.deltaVMarginMs = 0;
+      result.deltaVRequiredMs = requiredDeltaV;
+      result.deltaVAvailableMs = totalDeltaV;
+      result.reason = cause;
       result.failedPhaseId = phaseId;
       result.failureReason = cause;
       result.failureCause = cause;
@@ -401,6 +412,8 @@ export class OrbitMechanics {
         inclinationPenaltyMs: dvBreakdown.inclinationPenaltyMs,
         totalDeltaVMs: Math.round(totalDeltaV),
         requiredDeltaVMs: Math.round(requiredDeltaV),
+        stageIdealDeltaVMs: stageCalc.totalIdealDeltaVMs,
+        stages: stageCalc.stages,
         twr: Number(twr.toFixed(2)),
         maxQPa: resolvedRocket.maxQPa ?? 31000,
         peakLaunchG: resolvedRocket.peakLaunchG ?? 5.2,
@@ -942,6 +955,10 @@ export class OrbitMechanics {
     result.success = true;
     result.achievedAltitudeKm = resolvedOrbit.altitudeKm ?? 0;
     result.remainingDeltaVMs = totalDeltaV - requiredDeltaV;
+    result.deltaVMarginMs = totalDeltaV - requiredDeltaV;
+    result.deltaVRequiredMs = requiredDeltaV;
+    result.deltaVAvailableMs = totalDeltaV;
+    result.reason = "Payload fits and Δv budget is satisfied.";
     result.failureReason = "";
     result.failedPhaseId = null;
     result.failureCause = "";
@@ -957,6 +974,8 @@ export class OrbitMechanics {
       inclinationPenaltyMs: dvBreakdown.inclinationPenaltyMs,
       totalDeltaVMs: Math.round(totalDeltaV),
       requiredDeltaVMs: Math.round(requiredDeltaV),
+      stageIdealDeltaVMs: stageCalc.totalIdealDeltaVMs,
+      stages: stageCalc.stages,
       twr: Number(twr.toFixed(2)),
       maxQPa,
       peakLaunchG: peakG,
