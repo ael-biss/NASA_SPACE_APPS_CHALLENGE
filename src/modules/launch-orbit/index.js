@@ -89,7 +89,14 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     if (currentSpacecraftHandle?.spacecraft) {
       currentSpacecraftHandle.spacecraft.dispose();
     }
-    buildSpacecraftForStage();
+    if (gameState.spacecraft) {
+      currentSpacecraftHandle = buildSpacecraftModel(
+        gameState.spacecraft,
+        gameState.mission?.instruments ?? []
+      );
+    } else {
+      currentSpacecraftHandle = null;
+    }
   };
 
   const previewPadStack = (rocketId, fairingId) => {
