@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { AssetLoader } from "../../shared/utils/AssetLoader.js";
+import { KennedyHangarScene } from "./models/KennedyHangarScene.js";
 import { Spacecraft } from "./models/Spacecraft.js";
 import { SpacecraftConfig } from "./logic/SpacecraftConfig.js";
 import { SpacecraftConfigurator } from "./ui/SpacecraftConfigurator.js";
@@ -40,33 +41,22 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const previousEnv = sceneManager.scene.environment;
   sceneManager.scene.environment = envRT.texture;
 
-  // Subtle starfield & assembly bay turntable ring
-  const stars = _createStarfield();
-  bayGroup.add(stars);
+  // Kennedy Space Center Vehicle Integration High-Bay Hangar
+  const hangar = new KennedyHangarScene();
+  bayGroup.add(hangar.build());
 
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.2, 2.26, 64),
-    new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.25,
-      side: THREE.DoubleSide,
-    })
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = -1.6;
-  bayGroup.add(ring);
-
-  sceneManager.scene.background = new THREE.Color(0x060b16);
+  sceneManager.scene.background = new THREE.Color(0x60a5fa);
   sceneManager.addObject(bayGroup);
 
   const controls = new OrbitControls(sceneManager.camera, sceneManager.renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
-  controls.minDistance = 2.2;
-  controls.maxDistance = 14;
-  controls.target.set(0, 0, 0);
-  sceneManager.setCamera(new THREE.Vector3(3.4, 2.1, 4.4), controls.target);
+  controls.minDistance = 2.4;
+  controls.maxDistance = 8.8;
+  controls.minPolarAngle = Math.PI * 0.16;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.target.set(0, -0.05, 0);
+  sceneManager.setCamera(new THREE.Vector3(2.1, 1.05, 6.2), controls.target);
   controls.update();
 
   // Restore previous spacecraft selection if player returns to Design phase
@@ -89,6 +79,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
 
   let lastMissionRef = gameState.mission;
   let isSyncing = false;
+  let elapsedSec = 0;
 
   const syncSpacecraft = () => {
     isSyncing = true;
@@ -97,6 +88,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
       config.setInstruments(instruments);
       const spec = config.toSpacecraftSpec(gameState.mission);
       spacecraft.assemble(spec.selection, instruments);
+      hangar.fitPedestalToSpacecraft(spacecraft.getGroup());
       configurator.updateStats(spec);
       gameState.setSpacecraft(spec);
     } finally {
@@ -116,6 +108,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   activeState = {
     sceneManager,
     bayGroup,
+    hangar,
     controls,
     spacecraft,
     configurator,
@@ -123,6 +116,11 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     envRT,
     previousEnv,
     unsubscribe,
+    getElapsed: () => elapsedSec,
+    addElapsed: (dt) => {
+      elapsedSec += dt;
+      return elapsedSec;
+    },
   };
 }
 
@@ -132,8 +130,10 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
  */
 export function update(deltaTime) {
   if (!activeState) return;
+  const elapsed = activeState.addElapsed(deltaTime);
   activeState.controls.update();
   activeState.spacecraft.update(deltaTime);
+  activeState.hangar.update(deltaTime, elapsed);
 }
 
 /** Clean up assembly bay 3D objects, OrbitControls, subscriptions, and configurator UI. */
@@ -142,6 +142,7 @@ export function unmount() {
   const {
     sceneManager,
     bayGroup,
+    hangar,
     controls,
     spacecraft,
     configurator,
@@ -155,6 +156,7 @@ export function unmount() {
   configurator.destroy();
   controls.dispose();
   spacecraft.dispose();
+  hangar.dispose();
   assetLoader.dispose();
   sceneManager.scene.environment = previousEnv ?? null;
   envRT?.dispose();
@@ -187,13 +189,13 @@ export function buildSpacecraftModel(spacecraftSpec, instruments = []) {
 function _createStudioEnvironment(renderer) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
-  envScene.background = new THREE.Color(0x0f172a);
+  envScene.background = new THREE.Color(0x334155);
 
   const panels = [
-    { pos: [0, 6, 4], scale: [10, 4, 1], color: 0xffffff },
+    { pos: [0, 6, 4], scale: [10, 4, 1], color: 0xfffbeb },
     { pos: [6, 3, -4], scale: [6, 6, 1], color: 0xe0f2fe },
-    { pos: [-6, 2, 0], scale: [6, 6, 1], color: 0x7dd3fc },
-    { pos: [0, -6, 0], scale: [10, 1, 10], color: 0x1e293b },
+    { pos: [-6, 2, 0], scale: [6, 6, 1], color: 0xbae6fd },
+    { pos: [0, -6, 0], scale: [10, 1, 10], color: 0x475569 },
   ];
   const geo = new THREE.BoxGeometry(1, 1, 1);
   for (const p of panels) {
@@ -211,21 +213,4 @@ function _createStudioEnvironment(renderer) {
   });
   pmrem.dispose();
   return envRT;
-}
-
-function _createStarfield() {
-  const count = 600;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const r = 35 + Math.random() * 45;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0xcbd5e1, size: 0.14 });
-  return new THREE.Points(geo, mat);
 }

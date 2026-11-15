@@ -16,6 +16,7 @@ import {
   getComponentsByCategory,
 } from "../data/components.js";
 import { SpacecraftConfig } from "../logic/SpacecraftConfig.js";
+import { KennedyHangarScene } from "../models/KennedyHangarScene.js";
 import { Spacecraft } from "../models/Spacecraft.js";
 
 test("all 6 subsystem categories are populated and DEFAULT_SELECTION is valid", () => {
@@ -144,4 +145,20 @@ test("Spacecraft mounts 3D engineering-upgrades and computes thermal/rad/attitud
   const group = craft.assemble(spec.selection);
   assert.ok(group.getObjectByName("engineering-upgrades"));
   craft.dispose();
+});
+
+test("KennedyHangarScene builds KSC integration bay, fits pedestal to spacecraft, and disposes cleanly", () => {
+  const hangar = new KennedyHangarScene();
+  const bay = hangar.build();
+  assert.ok(bay instanceof THREE.Group);
+  assert.ok(bay.getObjectByName("ksc-outdoor-pad-39a"));
+
+  const craft = new Spacecraft();
+  const group = craft.assemble(DEFAULT_SELECTION);
+  hangar.fitPedestalToSpacecraft(group);
+  hangar.update(0.016, 1.0);
+
+  craft.dispose();
+  hangar.dispose();
+  assert.equal(bay.children.length, 0);
 });
