@@ -588,6 +588,15 @@ export class LaunchAnimation {
     return t * t * (3 - 2 * t);
   }
 
+  _onPhaseEnter(phaseIdx) {
+    if (phaseIdx === 2 && this._boosterGroup) {
+      // Stage separation: detach booster into tumbling debris
+      const worldPos = new THREE.Vector3();
+      this._boosterGroup.getWorldPosition(worldPos);
+      this._boosterGroup.visible = false;
+      this._spawnPartChunk(worldPos, new THREE.Vector3(-0.3, -0.8, 0.2), 0xe2e8f0, 0.24);
+    }
+  }
   /** Build realistic engine nozzle clusters */
   _buildEngineCluster(clusterSpec, radius) {
     const group = new THREE.Group();
@@ -1282,3 +1291,4 @@ export class LaunchAnimation {
     });
   }
 }
+  
