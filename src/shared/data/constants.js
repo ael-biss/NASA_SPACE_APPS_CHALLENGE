@@ -16,6 +16,7 @@ export const PHYSICS = {
   SPEED_OF_LIGHT_KMS: 299792.458,
   SOLAR_CONSTANT_WM2: 1361,
   AIR_DENSITY_SEA_LEVEL_KGM3: 1.225,
+  EARTH_SIDEREAL_OMEGA_RAD_S: 7.2921159e-5,
 };
 
 export const ORBIT_IDS = {
@@ -28,3 +29,10 @@ export const ORBIT_IDS = {
 };
 
 export const GAME_PHASES = ["mission", "spacecraft", "launch", "results"];
+// ── Flat named exports used by the Launch & Orbit module ──
+// (additive: the PHYSICS object above is unchanged, so other members' code still works)
+export const STANDARD_GRAVITY = PHYSICS.STANDARD_GRAVITY_MS2;   // m/s²
+export const EARTH_RADIUS_KM = PHYSICS.EARTH_RADIUS_KM;         // km
+// OrbitParameters.js works in metres, so convert km³/s² → m³/s² (×1e9)
+export const EARTH_MU = PHYSICS.EARTH_MU_KM3_S2 * 1e9;          // m³/s²
+

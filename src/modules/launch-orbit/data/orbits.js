@@ -20,7 +20,7 @@ export const ORBITS = [
     insertionOverheadMs: 0,
     orbitalPeriodSec: 12,
     orbitRadius3D: 3.0,
-    inclinationDeg: 28.5,
+    inclinationDeg: 28.6,
     cruiseDays: 1,
     solarDistanceAU: 1.0,
     radiationFluxKradPerDay: 0.08,

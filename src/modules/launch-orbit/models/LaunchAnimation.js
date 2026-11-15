@@ -7,6 +7,7 @@
  */
 
 import * as THREE from "three";
+import { PlanetScene } from "./PlanetScene.js";
 
 const PHASE_WINDOWS = [
   { id: "liftoff", start: 0.0, end: 0.14 },
@@ -36,6 +37,8 @@ export class LaunchAnimation {
     this._spacecraftGroup = null;
     this._orbit = null;
     this._launchResult = null;
+    this._siteFrame = null;
+    this._getSiteFrame = null;
     this._onPhaseUpdate = null;
     this._onComplete = null;
 
@@ -69,6 +72,8 @@ export class LaunchAnimation {
     this._spacecraftGroup = spacecraftOrHandle?.group ?? spacecraftOrHandle;
     this._orbit = orbit ?? { id: "LEO", orbitRadius3D: 3.0, orbitalPeriodSec: 12 };
     this._launchResult = launchResult;
+    this._getSiteFrame = callbacks.getSiteFrame ?? null;
+    this._siteFrame = callbacks.siteFrame ?? this._resolveDefaultSiteFrame();
     this._onPhaseUpdate = callbacks.onPhaseUpdate ?? null;
     this._onComplete = callbacks.onComplete ?? null;
 
@@ -79,6 +84,12 @@ export class LaunchAnimation {
     this._failureTriggered = false;
     this._failureHoldSec = 0;
     this._activePhaseIndex = -1;
+    this._orbitAngle =
+      this._orbit?.id === "LEO"
+        ? 1.82
+        : this._orbit?.id === "MEO" || this._orbit?.id === "GEO"
+          ? 0
+          : 0;
 
     this._buildVehicleStack();
     if (this._spacecraft?.setSolarDeployed) {
@@ -298,8 +309,68 @@ export class LaunchAnimation {
       this._stackGroup.add(this._spacecraftGroup);
     }
 
-    this._stackGroup.position.set(0, 0, 1.95);
+    const frame = this._getCurrentSiteFrame();
+    const padStandRadius = (frame.earthRadius ?? 1.8) + 0.42;
+    this._stackGroup.scale.setScalar(0.55);
+    this._stackGroup.position.copy(frame.up).multiplyScalar(padStandRadius);
+    this._alignVehicleToAxes(frame.up, frame.heading);
+    this._focusTarget.copy(this._stackGroup.position);
     this.root.add(this._stackGroup);
+  }
+
+  _resolveDefaultSiteFrame() {
+    const latDeg = 28.6;
+    const lonDeg = -80.6;
+    const azDeg = this._launchResult?.missionStats?.launchAzimuthDeg ?? 90;
+    const earthRadius = 1.8;
+    const up = PlanetScene.latLonToVector3(latDeg, lonDeg, earthRadius).normalize();
+    const lonRad = THREE.MathUtils.degToRad(lonDeg);
+    const azRad = THREE.MathUtils.degToRad(azDeg);
+    const east = new THREE.Vector3(-Math.sin(lonRad), 0, -Math.cos(lonRad)).normalize();
+    const north = up.clone().cross(east).normalize();
+    const heading = north
+      .clone()
+      .multiplyScalar(Math.cos(azRad))
+      .addScaledVector(east, Math.sin(azRad))
+      .normalize();
+    const planeNormal = up.clone().cross(heading).normalize();
+    return {
+      earthRadius,
+      surfacePos: up.clone().multiplyScalar(earthRadius),
+      up,
+      east,
+      north,
+      heading,
+      planeNormal,
+    };
+  }
+
+  _getCurrentSiteFrame() {
+    if (typeof this._getSiteFrame === "function") {
+      return this._getSiteFrame() ?? this._siteFrame ?? this._resolveDefaultSiteFrame();
+    }
+    return this._siteFrame ?? this._resolveDefaultSiteFrame();
+  }
+
+  _alignVehicleToAxes(noseDir, refForward) {
+    if (!this._stackGroup) return;
+    const yAxis = noseDir.clone().normalize();
+    const candidate = refForward?.clone() ?? new THREE.Vector3(1, 0, 0);
+    if (Math.abs(yAxis.dot(candidate)) > 0.96) {
+      candidate.set(0, 1, 0);
+      if (Math.abs(yAxis.dot(candidate)) > 0.96) {
+        candidate.set(0, 0, 1);
+      }
+    }
+    const zAxis = candidate.clone().cross(yAxis).normalize();
+    const xAxis = yAxis.clone().cross(zAxis).normalize();
+    const mat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+    this._stackGroup.quaternion.setFromRotationMatrix(mat);
+  }
+
+  _smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
   }
 
   _onPhaseEnter(phaseIdx) {
@@ -336,21 +407,52 @@ export class LaunchAnimation {
   _positionVehicleAlongTrajectory(progress, phaseIdx) {
     if (!this._stackGroup) return;
 
+    const frame = this._getCurrentSiteFrame();
+    const { up: u0, heading } = frame;
+    const padStandRadius = (frame.earthRadius ?? 1.8) + 0.42;
     const leoRadius = 3.0;
     const targetRadius = this._orbit?.orbitRadius3D ?? 3.0;
     const isDeep = this._orbit?.id === "LUNAR" || this._orbit?.id === "MARS";
+    const deployAngle = 0.72;
 
-    // Ascent from Earth surface (z=1.9) to LEO parking orbit (z=3.0) during phases 0..2
+    const leoDeparture = u0
+      .clone()
+      .multiplyScalar(Math.cos(deployAngle) * leoRadius)
+      .addScaledVector(heading, Math.sin(deployAngle) * leoRadius);
+    const leoDepartureDir = u0
+      .clone()
+      .multiplyScalar(-Math.sin(deployAngle))
+      .addScaledVector(heading, Math.cos(deployAngle))
+      .normalize();
+
+    // Ascent from KSC LC-39A pad (vertical liftoff -> eastward gravity turn into LEO plane)
     if (progress < 0.44) {
       const t = progress / 0.44;
-      const r = 1.92 + (leoRadius - 1.92) * t;
-      const arcAngle = t * 0.45;
-      this._stackGroup.position.set(
-        Math.sin(arcAngle) * r * 0.35,
-        Math.sin(t * Math.PI) * 0.35,
-        Math.cos(arcAngle) * r
-      );
-      this._stackGroup.rotation.set(0.35 * t, 0, -0.25 * t);
+      const radialGain = Math.pow(t, 0.85);
+      const r = padStandRadius + (leoRadius - padStandRadius) * radialGain;
+      const downrangeAngle = 0.48 * Math.pow(t, 1.45);
+
+      const radial = u0
+        .clone()
+        .multiplyScalar(Math.cos(downrangeAngle))
+        .addScaledVector(heading, Math.sin(downrangeAngle))
+        .normalize();
+      const tangent = u0
+        .clone()
+        .multiplyScalar(-Math.sin(downrangeAngle))
+        .addScaledVector(heading, Math.cos(downrangeAngle))
+        .normalize();
+
+      this._stackGroup.position.copy(radial).multiplyScalar(r);
+
+      const pitchT = this._smoothstep(0.1, 0.88, t);
+      const pitchAngle = pitchT * (Math.PI / 2);
+      const noseDir = radial
+        .clone()
+        .multiplyScalar(Math.cos(pitchAngle))
+        .addScaledVector(tangent, Math.sin(pitchAngle))
+        .normalize();
+      this._alignVehicleToAxes(noseDir, radial);
 
       if (this._machCone) {
         this._machCone.material.opacity = phaseIdx === 1 ? 0.34 : 0.0;
@@ -359,36 +461,71 @@ export class LaunchAnimation {
         this._rocketPlume.scale.set(1, 0.8 + Math.random() * 0.45, 1);
       }
     } else if (progress < 0.58) {
-      // LEO coast & deployment
+      // LEO parking coast & deployment along KSC orbital plane (0.48 -> 0.72 rad)
       if (this._machCone) this._machCone.material.opacity = 0;
       const t = (progress - 0.44) / 0.14;
-      const angle = 0.25 + t * 0.35;
-      this._stackGroup.position.set(Math.sin(angle) * leoRadius * 0.5, 0, Math.cos(angle) * leoRadius);
-      this._stackGroup.rotation.set(Math.PI * 0.45, angle, 0);
+      const angle = 0.48 + t * (deployAngle - 0.48);
+      const radial = u0
+        .clone()
+        .multiplyScalar(Math.cos(angle))
+        .addScaledVector(heading, Math.sin(angle))
+        .normalize();
+      const tangent = u0
+        .clone()
+        .multiplyScalar(-Math.sin(angle))
+        .addScaledVector(heading, Math.cos(angle))
+        .normalize();
+
+      this._stackGroup.position.copy(radial).multiplyScalar(leoRadius);
+      this._alignVehicleToAxes(tangent, radial);
     } else if (isDeep) {
-      // Transfer & Cruise to Moon or Mars
+      // Outbound transfer & cruise from LEO departure point to Moon or Mars capture ring
       const t = (progress - 0.58) / 0.42;
-      const p0 = new THREE.Vector3(0.7, 0, leoRadius * 0.92);
-      const p1 = new THREE.Vector3(targetRadius * 0.45, 0.85, targetRadius * 0.32);
-      const p2 = new THREE.Vector3(targetRadius * 0.82, 0.38, -0.85);
+      const p1 = leoDeparture.clone().addScaledVector(leoDepartureDir, targetRadius * 0.35);
+      p1.x = Math.max(p1.x, targetRadius * 0.42);
+      const p2 = new THREE.Vector3(targetRadius * 0.78, 0.35, -0.95);
       const destR = this._orbit.id === "MARS" ? 1.6 : 1.37;
       const p3 = new THREE.Vector3(targetRadius, 0, -destR);
 
-      const pos = this._sampleCatmull(p0, p1, p2, p3, t);
+      const pos = this._sampleCatmull(leoDeparture, p1, p2, p3, t);
       this._stackGroup.position.copy(pos);
-      const nextPos = this._sampleCatmull(p0, p1, p2, p3, Math.min(1, t + 0.02));
-      this._stackGroup.lookAt(nextPos);
+      const nextPos = this._sampleCatmull(leoDeparture, p1, p2, p3, Math.min(1, t + 0.02));
+      const travelDir = nextPos.clone().sub(pos);
+      if (travelDir.lengthSq() > 1e-6) {
+        this._alignVehicleToAxes(travelDir.normalize(), pos);
+      }
     } else if (this._orbit?.id !== "LEO") {
-      // MEO / GEO Hohmann climb
+      // MEO / GEO transfer arc from LEO departure point to target orbit ring
       const t = (progress - 0.58) / 0.42;
-      const r = leoRadius + (targetRadius - leoRadius) * t;
-      const a = t * Math.PI * 0.65;
-      this._stackGroup.position.set(Math.sin(a) * r, 0.15 * Math.sin(t * Math.PI), Math.cos(a) * r);
+      const p1 = leoDeparture
+        .clone()
+        .addScaledVector(leoDepartureDir, targetRadius * 0.45)
+        .setLength(targetRadius * 0.76);
+      const p2 = new THREE.Vector3(targetRadius, 0, 0);
+      const curve = new THREE.CatmullRomCurve3([leoDeparture, p1, p2]);
+      const pos = curve.getPoint(Math.max(0, Math.min(1, t)));
+      const nextPos = curve.getPoint(Math.max(0, Math.min(1, t + 0.02)));
+      this._stackGroup.position.copy(pos);
+      const travelDir = nextPos.clone().sub(pos);
+      if (travelDir.lengthSq() > 1e-6) {
+        this._alignVehicleToAxes(travelDir.normalize(), pos);
+      }
     } else {
-      // LEO stabilization
+      // LEO stabilization along site orbital plane
       const t = (progress - 0.58) / 0.42;
-      const a = 0.6 + t * 1.2;
-      this._stackGroup.position.set(Math.sin(a) * leoRadius, 0, Math.cos(a) * leoRadius);
+      const a = deployAngle + t * 1.1;
+      const radial = u0
+        .clone()
+        .multiplyScalar(Math.cos(a))
+        .addScaledVector(heading, Math.sin(a))
+        .normalize();
+      const tangent = u0
+        .clone()
+        .multiplyScalar(-Math.sin(a))
+        .addScaledVector(heading, Math.cos(a))
+        .normalize();
+      this._stackGroup.position.copy(radial).multiplyScalar(leoRadius);
+      this._alignVehicleToAxes(tangent, radial);
     }
 
     this._focusTarget.copy(this._stackGroup.position);
@@ -413,16 +550,36 @@ export class LaunchAnimation {
         Math.cos(this._orbitAngle) * localR
       );
       this._focusTarget.set(centerX, 0, 0);
+      this._stackGroup.rotation.y += dt * 0.6;
+    } else if (this._orbit?.id === "LEO") {
+      const frame = this._getCurrentSiteFrame();
+      const leoRadius = 3.0;
+      const radial = frame.up
+        .clone()
+        .multiplyScalar(Math.cos(this._orbitAngle))
+        .addScaledVector(frame.heading, Math.sin(this._orbitAngle))
+        .normalize();
+      const tangent = frame.up
+        .clone()
+        .multiplyScalar(-Math.sin(this._orbitAngle))
+        .addScaledVector(frame.heading, Math.cos(this._orbitAngle))
+        .normalize();
+      this._stackGroup.position.copy(radial).multiplyScalar(leoRadius);
+      this._alignVehicleToAxes(tangent, radial);
+      this._focusTarget.set(0, 0, 0);
     } else {
       const r = this._orbit?.orbitRadius3D ?? 3.0;
-      this._stackGroup.position.set(
-        Math.sin(this._orbitAngle) * r,
+      const inclRad = ((this._orbit?.inclinationDeg ?? 0) * Math.PI) / 180;
+      const localPos = new THREE.Vector3(
+        Math.cos(this._orbitAngle) * r,
         0,
-        Math.cos(this._orbitAngle) * r
+        Math.sin(this._orbitAngle) * r
       );
+      localPos.applyAxisAngle(new THREE.Vector3(1, 0, 0), inclRad);
+      this._stackGroup.position.copy(localPos);
       this._focusTarget.set(0, 0, 0);
+      this._stackGroup.rotation.y += dt * 0.6;
     }
-    this._stackGroup.rotation.y += dt * 0.6;
   }
 
   _triggerFailure(failedPhase) {

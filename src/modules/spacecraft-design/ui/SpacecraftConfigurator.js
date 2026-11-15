@@ -328,6 +328,7 @@ export class SpacecraftConfigurator {
     style.id = STYLE_ELEMENT_ID;
     style.textContent = `
       .sc-panel {
+        pointer-events: auto;
         position: fixed;
         top: 72px;
         right: 16px;
@@ -405,6 +406,7 @@ export class SpacecraftConfigurator {
       }
       .sc-list {
         flex: 1;
+        min-height: 0;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
