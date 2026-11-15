@@ -10,6 +10,7 @@ import { GameState } from "../../core/GameState.js";
 import { GameFlowController } from "./logic/GameFlowController.js";
 import { PhaseStepper } from "./ui/PhaseStepper.js";
 import { ResourceHUD } from "./ui/ResourceHUD.js";
+import { InstructionsModal } from "./ui/InstructionsModal.js";
 
 /**
  * Bootstrap the full integrated Space Mission Design Game.
@@ -24,17 +25,23 @@ export function initGame(rootElement = document.body) {
   shell.innerHTML = `
     <header class="gi-topbar">
       <div class="gi-topbar-left" data-role="stepper"></div>
-      <div class="gi-topbar-right" data-role="hud"></div>
+      <div class="gi-topbar-right">
+        <div data-role="hud"></div>
+        <button type="button" class="gi-help-btn" data-role="instructions-btn" title="Mission Instructions (?)">? Instructions</button>
+      </div>
     </header>
     <main class="gi-module-root" data-role="module-root"></main>
     <div class="gi-modal-root" data-role="modal-root"></div>
+    <div class="gi-modal-root" data-role="instructions-root"></div>
   `;
   rootElement.appendChild(shell);
 
   const stepperEl = shell.querySelector('[data-role="stepper"]');
   const hudEl = shell.querySelector('[data-role="hud"]');
+  const instructionsBtn = shell.querySelector('[data-role="instructions-btn"]');
   const moduleRoot = shell.querySelector('[data-role="module-root"]');
   const modalRoot = shell.querySelector('[data-role="modal-root"]');
+  const instructionsRoot = shell.querySelector('[data-role="instructions-root"]');
 
   let stepper = null;
   const flow = new GameFlowController(
@@ -54,6 +61,11 @@ export function initGame(rootElement = document.body) {
 
   const hud = new ResourceHUD(hudEl, gameState);
   hud.mount();
+
+  const instructionsModal = new InstructionsModal(instructionsRoot, () => gameState.phase);
+  instructionsModal.mount();
+  const onInstructionsClick = () => instructionsModal.toggle();
+  instructionsBtn.addEventListener("click", onInstructionsClick);
 
   gameState.subscribe((state) => {
     stepper.setActivePhase(state.phase);
@@ -78,6 +90,8 @@ export function initGame(rootElement = document.body) {
     flow,
     destroy: () => {
       cancelAnimationFrame(rafId);
+      instructionsBtn.removeEventListener("click", onInstructionsClick);
+      instructionsModal.destroy();
       hud.destroy();
       stepper.destroy();
       flow.activeModule?.unmount?.();
