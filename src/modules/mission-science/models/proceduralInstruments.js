@@ -109,6 +109,27 @@ export function createLaserAltimeterModel() {
     [0.8, 0, 0]
   );
 
+  // Circular umbilical connector port
+  addMesh(
+    group,
+    new THREE.CylinderGeometry(0.08, 0.08, 0.08, 12),
+    silver,
+    [0.96, 0, 0],
+    [0, 0, Math.PI / 2]
+  );
+
+  // Corner mounting bolts on optical bench plate
+  for (const x of [-0.78, 0.78]) {
+    for (const z of [-0.62, 0.62]) {
+      addMesh(
+        group,
+        new THREE.CylinderGeometry(0.04, 0.04, 0.16, 6),
+        silver,
+        [x, -0.47, z]
+      );
+    }
+  }
+
   return group;
 }
 
@@ -181,12 +202,28 @@ export function createParticleDetectorModel() {
     }
   }
 
-  // Rear electronics connector
+  // Rear electronics connector & mounting flange
   addMesh(
     group,
     new THREE.BoxGeometry(0.35, 0.35, 0.25),
     dark,
     [0, 0, -0.65]
+  );
+
+  addMesh(
+    group,
+    new THREE.CylinderGeometry(0.28, 0.3, 0.08, 16),
+    gold,
+    [0, 0, -0.57],
+    [Math.PI / 2, 0, 0]
+  );
+
+  // Inner collimator ring on front aperture
+  addMesh(
+    group,
+    new THREE.TorusGeometry(0.18, 0.02, 8, 24),
+    dark,
+    [0, 0, 0.88]
   );
 
   // Top electronics module
@@ -278,12 +315,20 @@ export function createSeismometerModel() {
     );
   }
 
-  // Small cable connector
+  // Small cable connector & umbilical collar
   addMesh(
     group,
     new THREE.BoxGeometry(0.25, 0.2, 0.2),
     dark,
     [0.55, 0.1, 0]
+  );
+
+  addMesh(
+    group,
+    new THREE.CylinderGeometry(0.07, 0.07, 0.08, 12),
+    gold,
+    [0.69, 0.1, 0],
+    [0, 0, Math.PI / 2]
   );
 
   return group;

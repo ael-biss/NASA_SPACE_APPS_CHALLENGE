@@ -11,7 +11,6 @@ import { Structure } from "./Structure.js";
 import { SolarPanels } from "./SolarPanels.js";
 import { Propulsion } from "./Propulsion.js";
 import { Antenna } from "./Antenna.js";
-import { InstrumentPayload } from "./InstrumentPayload.js";
 
 export class Spacecraft {
   /** @param {{ assetLoader?: import('../../../shared/utils/AssetLoader.js').AssetLoader | null }} [options] */
@@ -22,16 +21,18 @@ export class Spacecraft {
     this._solarBuilder = new SolarPanels();
     this._propulsionBuilder = new Propulsion();
     this._antennaBuilder = new Antenna();
-    this._instrumentBuilder = new InstrumentPayload(options.assetLoader ?? null);
+    this._assetLoader = options.assetLoader ?? null;
   }
 
   /**
-   * Assemble or rebuild the full 3D spacecraft from a SpacecraftSelection and optional instruments.
+   * Assemble or rebuild the full 3D spacecraft from a SpacecraftSelection.
+   * Instruments are tracked in SpacecraftConfig / MissionSpec for engineering & feasibility
+   * calculations, and are intentionally not rendered as 3D meshes on the bus.
    * @param {import('../../../shared/interfaces/SpacecraftSpec.js').SpacecraftSelection} selection
-   * @param {Array<Object>} [instruments=[]]
+   * @param {Array<Object>} [_instruments=[]]
    * @returns {THREE.Group}
    */
-  assemble(selection, instruments = []) {
+  assemble(selection, _instruments = []) {
     this._clearChildren();
 
     const structureData = getComponentById("structures", selection.structureId);
@@ -73,10 +74,6 @@ export class Spacecraft {
       this.group.add(extraGroup);
     }
 
-    if (Array.isArray(instruments) && instruments.length > 0) {
-      this.group.add(this._instrumentBuilder.build(instruments, anchors));
-    }
-
     return this.group;
   }
 
@@ -104,7 +101,6 @@ export class Spacecraft {
   /** Dispose geometries and materials when removing spacecraft from scene. */
   dispose() {
     this._clearChildren();
-    this._instrumentBuilder.dispose();
   }
 
   _buildBatteryAccent(batteryData) {
@@ -186,8 +182,6 @@ export class Spacecraft {
   }
 
   _clearChildren() {
-    this._instrumentBuilder.cancelPending();
-
     while (this.group.children.length > 0) {
       const child = this.group.children[0];
       this.group.remove(child);

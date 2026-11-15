@@ -14,6 +14,7 @@ export const MISSIONS = [
     id: "MISSION_LUNAR_ORBIT",
     name: "Lunar Polar Exploration (LRO-Class)",
     destination: "Moon",
+    model: "procedural:moon",
     difficulty: "Medium · Featured NASA Mission",
     nasaReference: "Inspired by NASA Lunar Reconnaissance Orbiter (2009)",
     description:
@@ -48,6 +49,7 @@ export const MISSIONS = [
     id: "MISSION_MARS_ORBIT",
     name: "Mars Atmospheric & Polar Orbiter (MAVEN-Class)",
     destination: "Mars",
+    model: "procedural:mars",
     difficulty: "Hard · Deep Space",
     nasaReference: "Inspired by NASA MAVEN Mars Orbiter (2013)",
     description:
@@ -86,6 +88,7 @@ export const MISSIONS = [
     id: "MISSION_EARTH_LEO",
     name: "Earth Surface Observation (Landsat-Class)",
     destination: "Earth",
+    model: "procedural:earth",
     difficulty: "Easy · LEO",
     nasaReference: "Inspired by NASA/USGS Landsat Earth Observers",
     description:
@@ -118,6 +121,7 @@ export const MISSIONS = [
     id: "MISSION_WEATHER_GEO",
     name: "Geostationary Weather Relay (GOES-Class)",
     destination: "Earth",
+    model: "procedural:earth",
     difficulty: "Medium · GEO",
     nasaReference: "Inspired by NOAA/NASA GOES Weather Satellites",
     description:
@@ -149,6 +153,7 @@ export const MISSIONS = [
     id: "MISSION_EARTH_SPACE_WEATHER",
     name: "Magnetosphere & Radiation Probe (Van Allen-Class)",
     destination: "Earth",
+    model: "procedural:earth",
     difficulty: "Medium · High Radiation",
     nasaReference: "Inspired by NASA Van Allen Probes",
     description:

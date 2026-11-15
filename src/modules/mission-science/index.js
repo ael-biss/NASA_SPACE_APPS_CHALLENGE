@@ -6,87 +6,31 @@
  */
 
 import * as THREE from "three";
+import { getMissionById } from "./data/missions.js";
 import { MissionEvaluator } from "./logic/MissionEvaluator.js";
+import { createPlanetModel } from "./models/proceduralPlanets.js";
 import { MissionPlanner } from "./ui/MissionPlanner.js";
 
 const evaluator = new MissionEvaluator();
+
+const ORBIT_VIEW_SPECS = {
+  LEO: { scale: 1.35, orbitRadius: 1.85, ringColor: 0x38bdf8 },
+  MEO: { scale: 1.3, orbitRadius: 2.2, ringColor: 0x60a5fa },
+  GEO: { scale: 1.2, orbitRadius: 2.55, ringColor: 0x93c5fd },
+  LUNAR: { scale: 1.2, orbitRadius: 1.95, ringColor: 0xe2e8f0 },
+  MARS: { scale: 1.28, orbitRadius: 2.05, ringColor: 0xfb923c },
+};
+
 let activeState = null;
 
-function _buildTargetGlobe(targetOrbitId = "LUNAR") {
-  const group = new THREE.Group();
-  group.name = "mission-target-globe";
-
-  let color = 0x2563eb;
-  let emissive = 0x0f172a;
-  let haloColor = 0x38bdf8;
-  let hasHalo = true;
-
-  if (targetOrbitId === "LUNAR") {
-    color = 0x94a3b8;
-    emissive = 0x1e293b;
-    haloColor = 0xcbd5e1;
-    hasHalo = false;
-  } else if (targetOrbitId === "MARS") {
-    color = 0xc2410c;
-    emissive = 0x431407;
-    haloColor = 0xfb923c;
-    hasHalo = true;
-  }
-
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(1.55, 48, 36),
-    new THREE.MeshStandardMaterial({
-      color,
-      emissive,
-      roughness: targetOrbitId === "LUNAR" ? 0.92 : 0.65,
-      metalness: 0.08,
-    })
-  );
-  group.add(sphere);
-
-  // Subtle target orbit ring
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(2.15, 0.02, 12, 72),
-    new THREE.MeshBasicMaterial({
-      color: haloColor,
-      transparent: true,
-      opacity: 0.55,
-    })
-  );
-  ring.rotation.x = Math.PI * 0.38;
-  ring.rotation.y = Math.PI * 0.12;
-  group.add(ring);
-
-  if (hasHalo) {
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(1.66, 36, 24),
-      new THREE.MeshBasicMaterial({
-        color: haloColor,
-        transparent: true,
-        opacity: 0.14,
-        side: THREE.BackSide,
-      })
-    );
-    group.add(halo);
-  }
-
-  return group;
-}
-
-function _createStarfield() {
-  const count = 700;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const r = 40 + Math.random() * 50;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  return new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe2e8f0, size: 0.15 }));
+function _disposeObject(obj) {
+  obj.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((mat) => mat.dispose());
+    }
+  });
 }
 
 /**
@@ -99,43 +43,99 @@ function _createStarfield() {
 export function mount(sceneManager, gameState, uiContainer, options = {}) {
   unmount();
 
-  const rootGroup = new THREE.Group();
-  rootGroup.name = "mission-science-scene";
+  const previewGroup = new THREE.Group();
+  previewGroup.name = "mission-target-preview";
 
-  const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x0f172a, 0.7);
-  const sun = new THREE.DirectionalLight(0xffffff, 2.1);
+  const hemi = new THREE.HemisphereLight(0xe0f2fe, 0x0f172a, 0.75);
+  const sun = new THREE.DirectionalLight(0xffffff, 2.0);
   sun.position.set(6, 4, 5);
-  rootGroup.add(hemi, sun, _createStarfield());
+  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
+  rimLight.position.set(-5, -2, -4);
+  previewGroup.add(hemi, sun, rimLight, _createStarfield());
 
-  let currentOrbitId = gameState.mission?.targetOrbitId ?? "LUNAR";
-  let globeGroup = _buildTargetGlobe(currentOrbitId);
-  rootGroup.add(globeGroup);
+  const planetHolder = new THREE.Group();
+  planetHolder.name = "planet-holder";
+  previewGroup.add(planetHolder);
+
+  const orbitPivot = new THREE.Group();
+  orbitPivot.rotation.x = 0.32;
+  orbitPivot.rotation.z = -0.18;
+  previewGroup.add(orbitPivot);
+
+  const orbitRingMaterial = new THREE.MeshBasicMaterial({
+    color: ORBIT_VIEW_SPECS.LEO.ringColor,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+  });
+  const orbitRing = new THREE.Mesh(
+    new THREE.RingGeometry(1.83, 1.87, 72),
+    orbitRingMaterial
+  );
+  orbitRing.rotation.x = Math.PI / 2;
+  orbitPivot.add(orbitRing);
+
+  const markerPivot = new THREE.Group();
+  orbitPivot.add(markerPivot);
+  const targetMarker = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.08, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.6,
+      metalness: 0.7,
+      roughness: 0.25,
+    })
+  );
+  targetMarker.position.x = 1.85;
+  markerPivot.add(targetMarker);
 
   sceneManager.scene.background = new THREE.Color(0x050914);
-  sceneManager.addObject(rootGroup);
-  sceneManager.setCamera(new THREE.Vector3(0, 0.6, 5.4), new THREE.Vector3(0, 0, 0));
+  sceneManager.addObject(previewGroup);
+  sceneManager.setCamera(new THREE.Vector3(0, 1.4, 5.4), new THREE.Vector3(0, 0, 0));
+
+  let currentModelKey = null;
+
+  const syncPlanetPreview = (missionSpec) => {
+    const orbitId = missionSpec?.targetOrbitId || "LEO";
+    const template = missionSpec?.missionId ? getMissionById(missionSpec.missionId) : null;
+    const modelKey = template?.model ?? template?.destination ?? orbitId;
+
+    if (modelKey !== currentModelKey) {
+      currentModelKey = modelKey;
+      while (planetHolder.children.length > 0) {
+        const old = planetHolder.children[0];
+        planetHolder.remove(old);
+        _disposeObject(old);
+      }
+      planetHolder.add(createPlanetModel(modelKey));
+    }
+
+    const view = ORBIT_VIEW_SPECS[orbitId] || ORBIT_VIEW_SPECS.LEO;
+    planetHolder.scale.setScalar(view.scale);
+    orbitRingMaterial.color.setHex(view.ringColor);
+    orbitRing.scale.setScalar(view.orbitRadius / 1.85);
+    targetMarker.position.x = view.orbitRadius;
+  };
+
+  syncPlanetPreview(gameState?.mission);
 
   const planner = new MissionPlanner(uiContainer, gameState, {
     onProceed: options.onProceed,
   });
   planner.mount();
 
-  const unsubscribe = gameState.subscribe((state) => {
-    const nextOrbit = state.mission?.targetOrbitId ?? "LUNAR";
-    if (nextOrbit !== currentOrbitId && activeState) {
-      currentOrbitId = nextOrbit;
-      rootGroup.remove(globeGroup);
-      _disposeGroup(globeGroup);
-      globeGroup = _buildTargetGlobe(currentOrbitId);
-      rootGroup.add(globeGroup);
-      activeState.globeGroup = globeGroup;
-    }
-  });
+  const unsubscribe = gameState?.subscribe
+    ? gameState.subscribe(() => {
+        syncPlanetPreview(gameState.mission);
+      })
+    : null;
 
   activeState = {
     sceneManager,
-    rootGroup,
-    globeGroup,
+    previewGroup,
+    planetHolder,
+    markerPivot,
     planner,
     unsubscribe,
   };
@@ -147,18 +147,21 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
  */
 export function update(deltaTime) {
   if (!activeState) return;
-  activeState.globeGroup.rotation.y += deltaTime * 0.28;
+  activeState.planetHolder.rotation.y += deltaTime * 0.18;
+  activeState.markerPivot.rotation.y += deltaTime * 0.65;
 }
 
 /** Clean up 3D preview objects and MissionPlanner UI. */
 export function unmount() {
   if (!activeState) return;
-  const { sceneManager, rootGroup, planner, unsubscribe } = activeState;
-  unsubscribe();
-  planner.destroy();
-  _disposeGroup(rootGroup);
-  sceneManager.removeObject(rootGroup);
+
+  const { sceneManager, previewGroup, planner, unsubscribe } = activeState;
   activeState = null;
+
+  if (unsubscribe) unsubscribe();
+  planner.destroy();
+  sceneManager.removeObject(previewGroup);
+  _disposeObject(previewGroup);
 }
 
 /**
@@ -173,12 +176,21 @@ export function evaluateMission(gameState) {
   );
 }
 
-function _disposeGroup(group) {
-  group.traverse((obj) => {
-    if (obj.geometry) obj.geometry.dispose();
-    if (obj.material) {
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach((m) => m.dispose());
-    }
-  });
+function _createStarfield() {
+  const count = 450;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = 22 + Math.random() * 28;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  return new THREE.Points(
+    geo,
+    new THREE.PointsMaterial({ color: 0xcbd5e1, size: 0.1, sizeAttenuation: true })
+  );
 }

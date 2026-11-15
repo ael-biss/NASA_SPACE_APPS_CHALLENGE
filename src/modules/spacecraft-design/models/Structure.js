@@ -128,8 +128,8 @@ export class Structure {
   }
 
   /**
-   * Compute distributed payload mounting anchors strictly outside the outer bus & collar
-   * surface, kept within front/back sectors clear of solar wings, star-tracker, and battery.
+   * Compute distributed payload mounting anchors flush against the bus panels,
+   * kept within front/back sectors clear of solar wings, star-tracker, and battery.
    * @param {string} shape
    * @param {number} halfW
    * @param {number} halfH
@@ -137,12 +137,12 @@ export class Structure {
    * @returns {Array<{ position: THREE.Vector3, normal: THREE.Vector3 }>}
    */
   _buildPayloadSlots(shape, halfW, halfH, halfD) {
-    const upperY = halfH * 0.36;
-    const lowerY = -halfH * 0.36;
+    const upperY = halfH * 0.34;
+    const lowerY = -halfH * 0.34;
 
     if (shape === "box") {
-      const zFront = halfD * 1.04;
-      const flankX = halfW * 0.56;
+      const zFront = halfD;
+      const flankX = halfW * 0.58;
       const specs = [
         { pos: [0, lowerY, zFront], norm: [0, 0, 1] },
         { pos: [flankX, upperY, zFront], norm: [0, 0, 1] },
@@ -159,21 +159,22 @@ export class Structure {
       }));
     }
 
-    // Place hex/oct slots on the outer collar radius at +/-32 deg around +Z and -Z
-    const outerR = halfW * 1.04;
-    const angle = (32 * Math.PI) / 180;
-    const sinA = Math.sin(angle);
-    const cosA = Math.cos(angle);
+    // Align hex (30 deg) and oct (22.5 deg) slots flush on the flat facets using the exact apothem
+    const sides = shape === "hex" ? 6 : 8;
+    const facetAngle = Math.PI / sides;
+    const apothem = halfW * Math.cos(facetAngle);
+    const sinA = Math.sin(facetAngle);
+    const cosA = Math.cos(facetAngle);
 
     const specs = [
-      { pos: [0, lowerY, outerR], norm: [0, 0, 1] },
-      { pos: [outerR * sinA, upperY, outerR * cosA], norm: [sinA, 0, cosA] },
-      { pos: [-outerR * sinA, upperY, outerR * cosA], norm: [-sinA, 0, cosA] },
-      { pos: [0, upperY, -outerR], norm: [0, 0, -1] },
-      { pos: [outerR * sinA, upperY, -outerR * cosA], norm: [sinA, 0, -cosA] },
-      { pos: [-outerR * sinA, upperY, -outerR * cosA], norm: [-sinA, 0, -cosA] },
-      { pos: [outerR * sinA, lowerY, outerR * cosA], norm: [sinA, 0, cosA] },
-      { pos: [-outerR * sinA, lowerY, outerR * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [apothem * sinA, lowerY, apothem * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-apothem * sinA, lowerY, apothem * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [apothem * sinA, upperY, apothem * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-apothem * sinA, upperY, apothem * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [apothem * sinA, upperY, -apothem * cosA], norm: [sinA, 0, -cosA] },
+      { pos: [-apothem * sinA, upperY, -apothem * cosA], norm: [-sinA, 0, -cosA] },
+      { pos: [apothem * sinA, lowerY, -apothem * cosA], norm: [sinA, 0, -cosA] },
+      { pos: [-apothem * sinA, lowerY, -apothem * cosA], norm: [-sinA, 0, -cosA] },
     ];
 
     return specs.map(({ pos, norm }) => ({

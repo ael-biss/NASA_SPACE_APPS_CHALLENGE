@@ -2,7 +2,9 @@
  * @file src/modules/spacecraft-design/models/InstrumentPayload.js
  * @owner Member 2 (Spacecraft Design)
  * @goal Loads (.glb via AssetLoader) and builds (procedural) scientific payload instruments,
- *       normalizes their scale/origin, and mounts them onto the spacecraft bus payload slots.
+ *       normalizes their scale/origin, and integrates them onto the spacecraft bus with
+ *       aerospace bulkhead flanges, triangulated support trusses, retention cradles,
+ *       and umbilical cable harnesses.
  */
 
 import * as THREE from "three";
@@ -21,6 +23,7 @@ const PROCEDURAL_BUILDERS = {
 };
 
 const FORWARD_Z = new THREE.Vector3(0, 0, 1);
+const UP_Y = new THREE.Vector3(0, 1, 0);
 
 export class InstrumentPayload {
   /** @param {AssetLoader | null} [assetLoader] */
@@ -58,18 +61,9 @@ export class InstrumentPayload {
       attachmentPoints.busDepth || attachmentPoints.busWidth || 1.15
     );
     const targetSize = Math.min(0.4, Math.max(0.16, busMinDim * 0.25));
-    const standoff = Math.max(0.1, busMinDim * 0.12);
+    const standoff = Math.max(0.09, busMinDim * 0.11);
 
-    const bracketMaterial = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      metalness: 0.85,
-      roughness: 0.35,
-    });
-    const padMaterial = new THREE.MeshStandardMaterial({
-      color: 0x64748b,
-      metalness: 0.8,
-      roughness: 0.3,
-    });
+    const materials = this._createMountMaterials();
 
     instruments.forEach((instrument, index) => {
       if (!instrument) return;
@@ -88,8 +82,7 @@ export class InstrumentPayload {
           slot,
           targetSize,
           standoff,
-          bracketMaterial,
-          padMaterial
+          materials
         );
         if (mounted) group.add(mounted);
         return;
@@ -101,8 +94,7 @@ export class InstrumentPayload {
         slot,
         targetSize,
         standoff,
-        bracketMaterial,
-        padMaterial,
+        materials,
         group,
         version
       );
@@ -134,14 +126,53 @@ export class InstrumentPayload {
     return this._assetLoader;
   }
 
+  _createMountMaterials() {
+    return {
+      bracket: new THREE.MeshStandardMaterial({
+        color: 0x475569,
+        metalness: 0.85,
+        roughness: 0.32,
+      }),
+      pad: new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        metalness: 0.82,
+        roughness: 0.28,
+      }),
+      isolator: new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        metalness: 0.3,
+        roughness: 0.62,
+      }),
+      fastener: new THREE.MeshStandardMaterial({
+        color: 0xcbd5e1,
+        metalness: 0.92,
+        roughness: 0.18,
+      }),
+      goldTrim: new THREE.MeshStandardMaterial({
+        color: 0xd4af37,
+        metalness: 0.86,
+        roughness: 0.24,
+      }),
+      cable: new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.25,
+        roughness: 0.75,
+      }),
+      accentWire: new THREE.MeshStandardMaterial({
+        color: 0xb45309,
+        metalness: 0.4,
+        roughness: 0.45,
+      }),
+    };
+  }
+
   async _loadAndMountGlb(
     url,
     instrument,
     slot,
     targetSize,
     standoff,
-    bracketMaterial,
-    padMaterial,
+    materials,
     group,
     version
   ) {
@@ -155,8 +186,7 @@ export class InstrumentPayload {
         slot,
         targetSize,
         standoff,
-        bracketMaterial,
-        padMaterial
+        materials
       );
       if (mounted && version === this._buildVersion) {
         group.add(mounted);
@@ -183,8 +213,7 @@ export class InstrumentPayload {
     slot,
     targetSize,
     standoff,
-    bracketMaterial,
-    padMaterial
+    materials
   ) {
     rawModel.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(rawModel);
@@ -198,38 +227,318 @@ export class InstrumentPayload {
     const maxDim = Math.max(size.x, size.y, size.z);
     const scale = maxDim > 0 ? targetSize / maxDim : 1;
 
+    const instW = Math.max(0.06, size.x * scale);
+    const instH = Math.max(0.06, size.y * scale);
+    const cradleW = Math.min(targetSize * 0.95, Math.max(0.09, instW * 0.78));
+    const cradleH = Math.min(targetSize * 0.95, Math.max(0.09, instH * 0.78));
+    const plateW = Math.max(0.11, cradleW * 1.12);
+    const plateH = Math.max(0.11, cradleH * 1.12);
+
+    // Magnetometers sit on an extended boom to isolate them from bus magnetic interference
+    const isBoom = instrument.id === "INS_MAG_01";
+    const effectiveStandoff = isBoom ? standoff * 1.45 : standoff;
+
     const mountGroup = new THREE.Group();
     mountGroup.name = `instrument:${instrument.id}`;
     mountGroup.position.copy(slot.position);
     mountGroup.rotation.y = Math.atan2(slot.normal.x, slot.normal.z);
 
-    // Structural arm extending from slightly inside bus surface to mounting adapter pad
-    const armEmbed = 0.08;
-    const armLength = standoff + armEmbed;
-    const arm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.022, 0.03, armLength, 10),
-      bracketMaterial
+    const busPortPos = this._buildBulkheadInterface(mountGroup, plateW, plateH, materials);
+    this._buildSupportTruss(
+      mountGroup,
+      plateW,
+      plateH,
+      cradleW,
+      cradleH,
+      effectiveStandoff,
+      isBoom,
+      materials
     );
-    arm.rotation.x = Math.PI / 2;
-    arm.position.z = standoff - armLength / 2;
-    mountGroup.add(arm);
-
-    const padRadius = Math.max(0.06, Math.min(size.x, size.y) * scale * 0.35);
-    const pad = new THREE.Mesh(
-      new THREE.CylinderGeometry(padRadius, padRadius * 1.1, 0.022, 16),
-      padMaterial
+    const instPortPos = this._buildAdapterCradle(
+      mountGroup,
+      cradleW,
+      cradleH,
+      effectiveStandoff,
+      materials
     );
-    pad.rotation.x = Math.PI / 2;
-    pad.position.z = standoff;
-    mountGroup.add(pad);
+    this._buildUmbilicalHarness(
+      mountGroup,
+      busPortPos,
+      instPortPos,
+      effectiveStandoff,
+      materials
+    );
 
+    // Seat the instrument solidly into the adapter cradle with slight elastomer overlap
+    const adapterFrontZ = effectiveStandoff + 0.008;
     const pivot = new THREE.Group();
     rawModel.position.sub(center);
     pivot.add(rawModel);
     pivot.scale.setScalar(scale);
-    pivot.position.z = standoff + 0.014 + (size.z * scale) * 0.5;
+    pivot.position.z = adapterFrontZ + (size.z * scale) * 0.5 - 0.006;
     mountGroup.add(pivot);
 
     return mountGroup;
+  }
+
+  /**
+   * Build the bus-side bulkhead mounting plate, thermal isolator, corner hex bolts,
+   * and avionics feedthrough connector. Returns the local cable exit point.
+   */
+  _buildBulkheadInterface(mountGroup, plateW, plateH, materials) {
+    // Dark G10 thermal isolator pad seated slightly into the bus skin to prevent seam gaps
+    const isolator = new THREE.Mesh(
+      new THREE.BoxGeometry(plateW * 1.08, plateH * 1.08, 0.016),
+      materials.isolator
+    );
+    isolator.position.z = 0.001;
+    mountGroup.add(isolator);
+
+    // Machined aluminum/titanium bulkhead flange plate
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(plateW, plateH, 0.012),
+      materials.bracket
+    );
+    plate.position.z = 0.009;
+    mountGroup.add(plate);
+
+    // Central structural boss collar
+    const bossRadius = Math.min(plateW, plateH) * 0.24;
+    const boss = new THREE.Mesh(
+      new THREE.CylinderGeometry(bossRadius, bossRadius * 1.15, 0.014, 16),
+      materials.pad
+    );
+    boss.rotation.x = Math.PI / 2;
+    boss.position.z = 0.018;
+    mountGroup.add(boss);
+
+    // 4 corner socket-head cap screws
+    const boltGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.008, 6);
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const bolt = new THREE.Mesh(boltGeo, materials.fastener);
+        bolt.rotation.x = Math.PI / 2;
+        bolt.position.set(sx * plateW * 0.38, sy * plateH * 0.38, 0.016);
+        mountGroup.add(bolt);
+      }
+    }
+
+    // Avionics bulkhead feedthrough junction box + MIL-spec circular connector collar
+    const portX = -plateW * 0.3;
+    const portY = -plateH * 0.28;
+    const junctionBox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.028, 0.024, 0.016),
+      materials.isolator
+    );
+    junctionBox.position.set(portX, portY, 0.016);
+    mountGroup.add(junctionBox);
+
+    const collar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.008, 0.009, 0.012, 12),
+      materials.goldTrim
+    );
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(portX, portY, 0.024);
+    mountGroup.add(collar);
+
+    return new THREE.Vector3(portX, portY, 0.028);
+  }
+
+  /**
+   * Build a triangulated 4-strut aerospace truss (or 2-bay magnetometer boom)
+   * transferring structural loads from the bulkhead plate to the instrument cradle.
+   */
+  _buildSupportTruss(
+    mountGroup,
+    plateW,
+    plateH,
+    cradleW,
+    cradleH,
+    standoff,
+    isBoom,
+    materials
+  ) {
+    const startZ = 0.012;
+    const endZ = standoff - 0.006;
+
+    // Central structural spar
+    const sparRadius = isBoom ? 0.012 : 0.016;
+    this._addStrut(
+      mountGroup,
+      new THREE.Vector3(0, 0, startZ),
+      new THREE.Vector3(0, 0, endZ),
+      sparRadius,
+      materials.bracket
+    );
+
+    if (isBoom) {
+      const midZ = (startZ + endZ) * 0.5;
+      const midW = (plateW + cradleW) * 0.22;
+      const midH = (plateH + cradleH) * 0.22;
+
+      const midRing = new THREE.Mesh(
+        new THREE.BoxGeometry(midW * 1.9, midH * 1.9, 0.008),
+        materials.pad
+      );
+      midRing.position.z = midZ;
+      mountGroup.add(midRing);
+
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const pBase = new THREE.Vector3(sx * plateW * 0.34, sy * plateH * 0.3, startZ);
+          const pMid = new THREE.Vector3(sx * midW * 0.8, sy * midH * 0.8, midZ);
+          const pTop = new THREE.Vector3(sx * cradleW * 0.34, sy * cradleH * 0.3, endZ);
+          this._addStrut(mountGroup, pBase, pMid, 0.0055, materials.pad);
+          this._addStrut(mountGroup, pMid, pTop, 0.0055, materials.pad);
+        }
+      }
+      return;
+    }
+
+    // 4-point triangulated bipod/quad-pod truss struts
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const p1 = new THREE.Vector3(sx * plateW * 0.34, sy * plateH * 0.3, startZ);
+        const p2 = new THREE.Vector3(sx * cradleW * 0.34, sy * cradleH * 0.3, endZ);
+        this._addStrut(mountGroup, p1, p2, 0.0065, materials.pad);
+      }
+    }
+
+    // Lower lateral shear cross-brace between the bottom struts
+    const midZ = (startZ + endZ) * 0.52;
+    const braceHalfW = (plateW + cradleW) * 0.17;
+    const braceY = -(plateH + cradleH) * 0.15;
+    this._addStrut(
+      mountGroup,
+      new THREE.Vector3(-braceHalfW, braceY, midZ),
+      new THREE.Vector3(braceHalfW, braceY, midZ),
+      0.005,
+      materials.bracket
+    );
+  }
+
+  /**
+   * Build the instrument-side iso-grid adapter cradle, thermal backing trim,
+   * corner retention clamp lugs, and instrument umbilical receptacle.
+   */
+  _buildAdapterCradle(mountGroup, cradleW, cradleH, standoff, materials) {
+    // Gold MLI thermal backing frame behind the adapter plate
+    const thermalTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(cradleW * 0.92, cradleH * 0.92, 0.008),
+      materials.goldTrim
+    );
+    thermalTrim.position.z = standoff - 0.006;
+    mountGroup.add(thermalTrim);
+
+    // Main machined adapter plate
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(cradleW, cradleH, 0.016),
+      materials.pad
+    );
+    plate.position.z = standoff;
+    mountGroup.add(plate);
+
+    // 4 corner retention clamp brackets gripping the instrument housing
+    const clampGeo = new THREE.BoxGeometry(0.016, 0.016, 0.026);
+    const pinGeo = new THREE.CylinderGeometry(0.004, 0.004, 0.01, 6);
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const cx = sx * cradleW * 0.44;
+        const cy = sy * cradleH * 0.44;
+
+        const clamp = new THREE.Mesh(clampGeo, materials.isolator);
+        clamp.position.set(cx, cy, standoff + 0.011);
+        mountGroup.add(clamp);
+
+        const pin = new THREE.Mesh(pinGeo, materials.fastener);
+        pin.rotation.x = Math.PI / 2;
+        pin.position.set(cx, cy, standoff + 0.024);
+        mountGroup.add(pin);
+      }
+    }
+
+    // Instrument-side umbilical connector block
+    const instPortX = -cradleW * 0.34;
+    const instPortY = -cradleH * 0.24;
+    const instConnector = new THREE.Mesh(
+      new THREE.BoxGeometry(0.022, 0.02, 0.016),
+      materials.isolator
+    );
+    instConnector.position.set(instPortX, instPortY, standoff + 0.012);
+    mountGroup.add(instConnector);
+
+    const instCollar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.007, 0.007, 0.01, 12),
+      materials.goldTrim
+    );
+    instCollar.rotation.x = Math.PI / 2;
+    instCollar.position.set(instPortX, instPortY, standoff + 0.004);
+    mountGroup.add(instCollar);
+
+    return new THREE.Vector3(instPortX, instPortY, standoff + 0.004);
+  }
+
+  /**
+   * Route braided power/data and telemetry umbilical cables with P-clamps
+   * between the bus bulkhead feedthrough and the instrument connector.
+   */
+  _buildUmbilicalHarness(mountGroup, busPortPos, instPortPos, standoff, materials) {
+    const mid1 = new THREE.Vector3(
+      busPortPos.x - 0.022,
+      busPortPos.y - 0.018,
+      standoff * 0.38
+    );
+    const mid2 = new THREE.Vector3(
+      instPortPos.x - 0.024,
+      instPortPos.y - 0.015,
+      standoff * 0.74
+    );
+
+    const mainCurve = new THREE.CatmullRomCurve3([busPortPos, mid1, mid2, instPortPos]);
+    const mainCable = new THREE.Mesh(
+      new THREE.TubeGeometry(mainCurve, 18, 0.0055, 8, false),
+      materials.cable
+    );
+    mountGroup.add(mainCable);
+
+    // Secondary amber Kapton-wrapped telemetry/heater wire
+    const offset = new THREE.Vector3(0.008, 0.006, 0);
+    const secCurve = new THREE.CatmullRomCurve3([
+      busPortPos.clone().add(offset),
+      mid1.clone().add(offset),
+      mid2.clone().add(offset),
+      instPortPos.clone().add(offset),
+    ]);
+    const secCable = new THREE.Mesh(
+      new THREE.TubeGeometry(secCurve, 16, 0.0032, 6, false),
+      materials.accentWire
+    );
+    mountGroup.add(secCable);
+
+    // Cable tie-down P-clamps along the harness
+    const clampGeo = new THREE.TorusGeometry(0.0075, 0.0022, 6, 12);
+    for (const t of [0.32, 0.68]) {
+      const pt = mainCurve.getPoint(t);
+      const tangent = mainCurve.getTangent(t).normalize();
+      const pClamp = new THREE.Mesh(clampGeo, materials.fastener);
+      pClamp.position.copy(pt);
+      pClamp.quaternion.setFromUnitVectors(FORWARD_Z, tangent);
+      mountGroup.add(pClamp);
+    }
+  }
+
+  /** Orient and add a cylindrical structural strut between two 3D points. */
+  _addStrut(parent, start, end, radius, material) {
+    const dir = new THREE.Vector3().subVectors(end, start);
+    const length = dir.length();
+    if (length < 1e-4) return;
+
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, length, 8),
+      material
+    );
+    mesh.position.copy(start).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(UP_Y, dir.normalize());
+    parent.add(mesh);
   }
 }

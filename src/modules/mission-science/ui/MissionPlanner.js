@@ -7,6 +7,7 @@
 
 import { getMissions } from "../data/missions.js";
 import { getInstruments } from "../data/instruments.js";
+import { validateMissionSpec } from "../../../shared/interfaces/MissionSpec.js";
 
 const STYLE_ELEMENT_ID = "mission-planner-styles";
 
