@@ -8,6 +8,7 @@
 
 import { getMissions } from "../data/missions.js";
 import { getInstruments } from "../data/instruments.js";
+import { validateMissionSpec } from "../../../shared/interfaces/MissionSpec.js";
 
 export class MissionPlanner {
   /**
@@ -168,7 +169,7 @@ export class MissionPlanner {
 
     return {
       missionId: mission.id,
-      title: mission.title,
+      title: mission.title ?? mission.name,
 
       // Translate the mission template's orbit into the shared orbit key.
       targetOrbitId: this.getTargetOrbitId(mission),
@@ -317,8 +318,8 @@ export class MissionPlanner {
           data-mission-id="${this.escapeHTML(item.id)}"
           aria-pressed="${selected}"
         >
-          <h3>${this.escapeHTML(item.title)}</h3>
-          <p>Destination: ${this.escapeHTML(item.target)}</p>
+          <h3>${this.escapeHTML(item.title ?? item.name)}</h3>
+          <p>Destination: ${this.escapeHTML(item.target ?? item.destination)}</p>
           <p>Orbit: ${this.escapeHTML(item.targetOrbit)}</p>
           <p>Budget: $${item.budgetCap}M</p>
           <p>Required science: ${item.minScienceScore} points</p>
@@ -447,6 +448,26 @@ export class MissionPlanner {
             <p>Mission budget: $${mission.budgetCap}M</p>
             <p>Remaining after payload: $${budgetRemaining.toFixed(1)}M</p>
           </div>
+
+          ${(() => {
+            const validation = validateMissionSpec(this.buildMissionSpec());
+            return `
+              <div class="mission-validation ${validation.valid ? "valid" : "invalid"}">
+                <strong>${
+                  validation.valid
+                    ? "Ready to Proceed to Spacecraft Design"
+                    : "Action Required Before Spacecraft Design:"
+                }</strong>
+                ${
+                  validation.valid
+                    ? ""
+                    : `<ul>${validation.errors
+                        .map((err) => `<li>${this.escapeHTML(err)}</li>`)
+                        .join("")}</ul>`
+                }
+              </div>
+            `;
+          })()}
 
           <p class="summary-note">
             Payload totals exclude spacecraft hardware and launch costs.

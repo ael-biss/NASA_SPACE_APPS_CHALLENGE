@@ -20,6 +20,7 @@ export const MISSIONS = [
     id: "MISSION_EARTH_LEO",
     name: "Earth Surface Observation",
     destination: "Earth",
+    model: "procedural:earth",
 
     description:
       "Observe Earth's surface to investigate geological features, environmental changes and land conditions.",
@@ -57,6 +58,7 @@ export const MISSIONS = [
     id: "MISSION_WEATHER_GEO",
     name: "Weather and Climate Observation",
     destination: "Earth",
+    model: "procedural:earth",
 
     description:
       "Monitor atmospheric conditions, cloud formations, temperature variations and atmospheric chemical composition from geostationary orbit.",
@@ -93,6 +95,7 @@ export const MISSIONS = [
     id: "MISSION_EARTH_SPACE_WEATHER",
     name: "Earth Space Weather Monitoring",
     destination: "Earth",
+    model: "procedural:earth",
 
     description:
       "Investigate Earth's magnetosphere, solar wind interactions and energetic particle radiation to understand space weather hazards.",
@@ -127,6 +130,7 @@ export const MISSIONS = [
     id: "MISSION_LUNAR_ORBIT",
     name: "Lunar Polar Exploration",
     destination: "Moon",
+    model: "procedural:moon",
 
     description:
       "Investigate lunar polar regions, search for water ice deposits and map surface composition, topography and thermal conditions.",
@@ -166,6 +170,7 @@ export const MISSIONS = [
     id: "MISSION_LUNAR_GEOPHYSICS",
     name: "Lunar Surface Geophysics",
     destination: "Moon",
+    model: "procedural:moon",
 
     description:
       "Deploy scientific instruments on the lunar surface to investigate seismic activity, internal structure and local chemical composition.",
@@ -202,6 +207,7 @@ export const MISSIONS = [
     id: "MISSION_MARS_ORBIT",
     name: "Mars Scientific Orbiter",
     destination: "Mars",
+    model: "procedural:mars",
 
     description:
       "Study the Martian surface, investigate possible subsurface ice deposits and analyze the planet's geological and magnetic environment.",
@@ -241,6 +247,7 @@ export const MISSIONS = [
     id: "MISSION_MARS_SURFACE",
     name: "Mars Surface Exploration",
     destination: "Mars",
+    model: "procedural:mars",
 
     description:
       "Deploy a scientific lander to investigate Martian surface geology, chemical composition, thermal properties and seismic activity.",
