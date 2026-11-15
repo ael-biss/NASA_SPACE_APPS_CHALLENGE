@@ -8,6 +8,7 @@
 
 import { getMissions } from "../data/missions.js";
 import { getInstruments } from "../data/instruments.js";
+import { getStrings } from "../../../shared/i18n/index.js";
 
 const STYLE_ELEMENT_ID = "mission-planner-styles";
 
@@ -173,12 +174,20 @@ export class MissionPlanner {
       missionId: mission.id,
       title: mission.name ?? mission.title ?? mission.id,
       targetOrbitId: this.getTargetOrbitId(mission),
-      budgetMillions: mission.budgetCap,
+      budgetMillions: this._getEffectiveBudget(mission),
       minSciencePoints: mission.minScienceScore,
       requiredDataRateKbps: mission.requiredDownlinkDataRate,
       targetDistanceKm: mission.missionDistance,
       instruments: selectedInstruments,
     };
+  }
+
+  _getEffectiveBudget(mission) {
+    if (!mission) return 0;
+    if (this.gameState?.tutorialMode && typeof mission.tutorialBudgetCap === "number") {
+      return mission.tutorialBudgetCap;
+    }
+    return mission.budgetCap;
   }
 
   /** @param {Object} mission */
@@ -274,6 +283,8 @@ export class MissionPlanner {
       return;
     }
 
+    const tutorialBadgeLabel = getStrings().welcome?.tutorialBadge ?? "Tutorial Mission";
+
     const missionCards = this.missions
       .map((item) => {
         const selected = item.id === this.selectedMissionId;
@@ -282,6 +293,7 @@ export class MissionPlanner {
         const diff = this._difficultyMeta(item.difficulty);
         const category = MISSION_CATEGORIES[item.id] ?? "Space Exploration";
         const shortObj = this._shortObjective(item);
+        const isTutorialCard = Boolean(item.isTutorialRecommended);
 
         return `
           <button
@@ -297,6 +309,7 @@ export class MissionPlanner {
             <div class="mp-meta-line">
               <span class="mp-dest">${this.escapeHTML(destination)}</span>
               <span class="mp-cat">${this.escapeHTML(category)}</span>
+              ${isTutorialCard ? `<span class="mp-pill mp-pill-tutorial">${this.escapeHTML(tutorialBadgeLabel)}</span>` : ""}
             </div>
             <p class="mp-desc">${this.escapeHTML(shortObj)}</p>
             <div class="mp-card-footer">
@@ -309,6 +322,7 @@ export class MissionPlanner {
       .join("");
 
     const selectedDiff = this._difficultyMeta(mission.difficulty);
+    const effectiveBudget = this._getEffectiveBudget(mission);
     const objectivesHtml = (mission.objectives ?? [])
       .map((id) => `<li>${this.escapeHTML(OBJECTIVE_LABELS[id] ?? id)}</li>`)
       .join("");
@@ -320,13 +334,13 @@ export class MissionPlanner {
             <span class="mp-badge">Phase 1 · Mission Selection</span>
             <h2>Choose Your Destination</h2>
           </header>
-          <div class="mp-scroll">${missionCards}</div>
+          <div class="mp-scroll" data-tour="mission-list">${missionCards}</div>
         </aside>
 
         <aside class="mp-brief-card" aria-label="Mission briefing">
           <header class="mp-brief-head">
             <div>
-              <span class="mp-badge">${this.escapeHTML(mission.destination)} · ${this.escapeHTML(this.getTargetOrbitId(mission))}</span>
+              <span class="mp-badge">${this.escapeHTML(mission.destination)} · ${this.escapeHTML(this.getTargetOrbitId(mission))}${mission.isTutorialRecommended ? ` · ${this.escapeHTML(tutorialBadgeLabel)}` : ""}</span>
               <h3>${this.escapeHTML(mission.name)}</h3>
             </div>
             <span class="mp-pill ${selectedDiff.cls}">${selectedDiff.label}</span>
@@ -341,7 +355,7 @@ export class MissionPlanner {
             </div>
             <div>
               <span>Mission Budget</span>
-              <strong>$${mission.budgetCap}M</strong>
+              <strong>$${effectiveBudget}M</strong>
             </div>
           </div>
 
@@ -361,7 +375,7 @@ export class MissionPlanner {
 
           ${
             this.onProceed
-              ? `<button type="button" class="mp-cta" data-action="proceed-spacecraft">
+              ? `<button type="button" class="mp-cta" data-action="proceed-spacecraft" data-tour="select-mission-btn">
                   Select Mission &amp; Build Spacecraft →
                 </button>`
               : ""
@@ -518,6 +532,11 @@ export class MissionPlanner {
         padding: 2px 8px;
         border-radius: 999px;
         white-space: nowrap;
+      }
+      .mp-pill-tutorial {
+        background: rgba(25, 191, 255, 0.16);
+        border: 1px solid rgba(25, 191, 255, 0.55);
+        color: #7ee2ff;
       }
       .mp-meta-line {
         display: flex;

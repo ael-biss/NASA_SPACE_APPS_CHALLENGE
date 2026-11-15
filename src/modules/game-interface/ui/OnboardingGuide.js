@@ -118,13 +118,14 @@ export class OnboardingGuide {
    * @param {HTMLElement} overlayContainer Host for floating tutorial & hint popovers
    * @param {import('../../../core/GameState.js').GameState} gameState
    */
-  constructor(controlsContainer, overlayContainer, gameState) {
+  constructor(controlsContainer, overlayContainer, gameState, options = {}) {
     this.controlsContainer = controlsContainer;
     this.overlayContainer = overlayContainer;
     this.gameState = gameState;
+    this.onOpenTutorial = options.onOpenTutorial ?? null;
 
     this._tutorialStepIdx = 0;
-    this._tutorialOpen = !this._hasSeenTutorial();
+    this._tutorialOpen = options.autoTutorial ?? !this._hasSeenTutorial();
     this._hintOpen = false;
     this._unsubState = null;
     this._unsubAudio = null;
@@ -163,6 +164,10 @@ export class OnboardingGuide {
       } else if (action === "toggle-hint") {
         this._hintOpen = !this._hintOpen;
         this.render();
+      } else if (action === "open-tutorial") {
+        this._hintOpen = false;
+        this.render();
+        this.onOpenTutorial?.();
       }
     };
     this.controlsContainer.addEventListener("click", this._boundControlsClick);
@@ -188,11 +193,16 @@ export class OnboardingGuide {
         this._markTutorialSeen();
         this.render();
       } else if (action === "open-tutorial") {
-        const phaseStep = TUTORIAL_STEPS.findIndex((s) => s.phase === this.gameState.phase);
-        this._tutorialStepIdx = phaseStep >= 0 ? phaseStep : 0;
-        this._tutorialOpen = true;
         this._hintOpen = false;
-        this.render();
+        if (this.onOpenTutorial) {
+          this.render();
+          this.onOpenTutorial();
+        } else {
+          const phaseStep = TUTORIAL_STEPS.findIndex((s) => s.phase === this.gameState.phase);
+          this._tutorialStepIdx = phaseStep >= 0 ? phaseStep : 0;
+          this._tutorialOpen = true;
+          this.render();
+        }
       } else if (action === "close-hint") {
         this._hintOpen = false;
         this.render();
@@ -226,6 +236,16 @@ export class OnboardingGuide {
     const muted = soundFX.isMuted();
     this.controlsContainer.innerHTML = `
       <div class="gi-guide-controls">
+        ${
+          this.onOpenTutorial
+            ? `<button
+                type="button"
+                class="gi-tool-btn"
+                data-guide-action="open-tutorial"
+                title="Replay Guided Tutorial (?)"
+              >?</button>`
+            : ""
+        }
         <button
           type="button"
           class="gi-tool-btn ${this._hintOpen ? "active" : ""}"

@@ -104,6 +104,8 @@ export const MISSIONS = [
     destination: "Earth",
     model: "procedural:earth",
     difficulty: "Easy · LEO",
+    isTutorialRecommended: true,
+    tutorialBudgetCap: 170,
     nasaReference: "Inspired by NASA/USGS Landsat Earth Observers",
     description:
       "Observe Earth's surface from 500 km Low Earth Orbit to monitor land cover, thermal anomalies, and geological change with high-rate downlink.",

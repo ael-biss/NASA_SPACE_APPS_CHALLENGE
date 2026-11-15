@@ -1130,3 +1130,208 @@ select:focus-visible {
   border-color: var(--oc-cosmic-cyan);
   color: var(--oc-deep-space);
 }
+
+/* ── PHASE 7 (a): Spotlight Tour Engine & Welcome Card ────────────────────── */
+.oc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.oc-tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.oc-tour-welcome-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 11, 27, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  pointer-events: auto;
+}
+
+.oc-tour-welcome {
+  width: min(460px, 100%);
+  background: var(--oc-space-navy, #101D33);
+  border: 1px solid rgba(25, 191, 255, 0.55);
+  border-radius: 14px;
+  padding: 22px 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+  color: var(--oc-starlight, #EAF4FF);
+}
+
+.oc-tour-badge {
+  display: inline-block;
+  font-family: var(--font-ui, "Rajdhani", sans-serif);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  margin-bottom: 6px;
+}
+
+.oc-tour-welcome h3 {
+  font-family: var(--font-display, "Orbitron", sans-serif);
+  font-size: 19px;
+  color: var(--oc-starlight, #EAF4FF);
+  margin: 0 0 8px;
+}
+
+.oc-tour-welcome p {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  margin: 0 0 16px;
+}
+
+.oc-tour-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.oc-tour-dim {
+  position: fixed;
+  background: rgba(5, 11, 27, 0.74);
+  pointer-events: auto;
+}
+
+.oc-tour-ring {
+  position: fixed;
+  border: 2px solid #19BFFF;
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px rgba(25, 191, 255, 0.25), 0 0 20px rgba(25, 191, 255, 0.45);
+  pointer-events: none;
+  animation: oc-tour-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes oc-tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(25, 191, 255, 0.25), 0 0 18px rgba(25, 191, 255, 0.42); }
+  50% { box-shadow: 0 0 0 5px rgba(25, 191, 255, 0.35), 0 0 28px rgba(25, 191, 255, 0.72); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-tour-ring { animation: none; }
+}
+
+.oc-tour-card {
+  position: fixed;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: #0F1C33;
+  border: 1px solid rgba(25, 191, 255, 0.62);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.72);
+  color: #EAF4FF;
+  pointer-events: auto;
+  z-index: 61;
+}
+
+.oc-tour-card-mobile {
+  left: 12px !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  top: auto !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+.oc-tour-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.oc-tour-counter {
+  font-family: var(--font-ui, "Rajdhani", sans-serif);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+}
+
+.oc-tour-title {
+  font-family: var(--font-display, "Orbitron", sans-serif);
+  font-size: 14.5px;
+  color: #EAF4FF;
+  margin: 0 0 6px;
+}
+
+.oc-tour-body {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  margin: 0 0 12px;
+}
+
+.oc-tour-action-req {
+  font-family: var(--font-ui, "Rajdhani", sans-serif);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #FF9D24;
+  background: rgba(255, 157, 36, 0.14);
+  border: 1px solid rgba(255, 157, 36, 0.45);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 10px;
+}
+
+.oc-tour-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.oc-tour-btn {
+  background: #050B1B;
+  color: #EAF4FF;
+  border: 1px solid rgba(140, 163, 191, 0.45);
+  border-radius: 8px;
+  padding: 7px 13px;
+  font-family: var(--font-ui, "Rajdhani", sans-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.oc-tour-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.oc-tour-btn-primary {
+  background: #19BFFF;
+  border-color: #19BFFF;
+  color: #050B1B;
+}
+
+.oc-tour-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: #cbd5e1;
+  padding: 5px 8px;
+}
+
+.oc-tour-btn:focus-visible {
+  outline: 2px solid #FF9D24;
+  outline-offset: 2px;
+}

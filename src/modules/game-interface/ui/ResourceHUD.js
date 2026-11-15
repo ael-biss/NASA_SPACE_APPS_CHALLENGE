@@ -68,7 +68,7 @@ export class ResourceHUD {
       spacecraft?.isValid ? "gi-ok" : spacecraft ? "gi-bad" : "gi-muted";
 
     this.container.innerHTML = `
-      <div class="gi-hud">
+      <div class="gi-hud" data-tour="topbar-hud">
         <div class="gi-hud-item">
           <span>Mission</span>
           <strong>${mission ? `${this._esc(mission.targetOrbitId)} · ${this._esc(mission.title)}` : "None"}</strong>

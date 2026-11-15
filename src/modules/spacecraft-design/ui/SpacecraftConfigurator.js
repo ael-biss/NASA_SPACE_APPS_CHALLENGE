@@ -65,6 +65,7 @@ export class SpacecraftConfigurator {
     this._pendingAutoFix = null;
     this._confirmModal = null;
     this._escHandler = null;
+    this._prepareTourHandler = null;
     this._root = null;
     this._controlsBar = null;
     this._instruments = getInstruments();
@@ -77,6 +78,7 @@ export class SpacecraftConfigurator {
     // Floating 3D Hangar Viewport Controls (bottom-left so spacecraft stays center stage)
     this._controlsBar = document.createElement("div");
     this._controlsBar.className = "sc-viewport-bar";
+    this._controlsBar.setAttribute("data-tour", "view-controls-3d");
     this._controlsBar.innerHTML = `
       <span class="sc-vp-hint">Drag to Rotate · Scroll to Zoom</span>
       <div class="sc-vp-btns">
@@ -100,14 +102,14 @@ export class SpacecraftConfigurator {
         <span class="sc-status-pill" data-role="status-pill">Checking...</span>
       </header>
 
-      <nav class="sc-tabs" role="tablist" aria-label="Spacecraft component categories"></nav>
+      <nav class="sc-tabs" role="tablist" aria-label="Spacecraft component categories" data-tour="subsystem-tabs"></nav>
 
       <section class="sc-list" aria-label="Component options"></section>
 
       <section class="sc-telemetry">
         <div class="sc-metric-grid" data-role="metrics"></div>
         <div class="sc-bars" data-role="bars"></div>
-        <div class="sc-validation" data-role="validation"></div>
+        <div class="sc-validation" data-role="validation" data-tour="validation-alerts"></div>
         <div class="sc-footer-cta" data-role="proceed-wrap"></div>
       </section>
     `;
@@ -138,6 +140,15 @@ export class SpacecraftConfigurator {
 
       if (target.dataset.componentId) {
         this.handlers.onSelectComponent?.(this._activeCategory, target.dataset.componentId);
+        if (
+          this._activeCategory === "structures" &&
+          typeof document !== "undefined" &&
+          typeof CustomEvent !== "undefined"
+        ) {
+          document.dispatchEvent(
+            new CustomEvent("orbitcraft:tour-action", { detail: { actionId: "select-bus" } })
+          );
+        }
         return;
       }
 
@@ -177,6 +188,17 @@ export class SpacecraftConfigurator {
 
     this._root.addEventListener("click", handleInteraction);
     this._controlsBar.addEventListener("click", handleInteraction);
+
+    if (typeof document !== "undefined") {
+      this._prepareTourHandler = (e) => {
+        if (e.detail?.step?.id === "structure-card" && this._activeCategory !== "structures") {
+          this._activeCategory = "structures";
+          this._renderTabs();
+          this._renderComponentList();
+        }
+      };
+      document.addEventListener("orbitcraft:prepare-tour-step", this._prepareTourHandler);
+    }
 
     this._renderTabs();
     this._renderComponentList();
@@ -261,7 +283,7 @@ export class SpacecraftConfigurator {
           <div class="sc-fill ${massRatio > 100 ? "sc-fill-err" : massRatio > 88 ? "sc-fill-warn" : "sc-fill-ok"}" style="width:${Math.min(100, massRatio)}%"></div>
         </div>
       </div>
-      <div class="sc-bar-row">
+      <div class="sc-bar-row" data-tour="power-bar">
         <div class="sc-bar-label">
           <span>Power (Draw / Gen)</span>
           <span>${formatPower(spacecraftSpec.powerConsumedWatts)} / ${formatPower(spacecraftSpec.powerGeneratedWatts)} (${powerSign}${Math.round(powerMargin)} W)</span>
@@ -341,6 +363,10 @@ export class SpacecraftConfigurator {
   /** Remove configurator DOM and event listeners. */
   destroy() {
     this._closeConfirmModal();
+    if (this._prepareTourHandler && typeof document !== "undefined") {
+      document.removeEventListener("orbitcraft:prepare-tour-step", this._prepareTourHandler);
+      this._prepareTourHandler = null;
+    }
     if (this._root && this._root.parentNode) {
       this._root.parentNode.removeChild(this._root);
     }
@@ -374,7 +400,7 @@ export class SpacecraftConfigurator {
           <strong>Auto-fix (${autoFix.changes.length} upgrade${autoFix.changes.length === 1 ? "" : "s"})</strong>
           <span class="sc-autofix-sub" title="${this._escapeHtml(summaryText)}">${this._escapeHtml(remainingText)}: ${this._escapeHtml(summaryText)}</span>
         </div>
-        <button type="button" class="sc-autofix-btn" data-action="apply-autofix">
+        <button type="button" class="sc-autofix-btn" data-action="apply-autofix" data-tour="auto-fix-btn">
           Apply Fix (${deltaLabel})
         </button>
       </div>
@@ -515,6 +541,7 @@ export class SpacecraftConfigurator {
           type="button"
           class="sc-tab ${cat.key === this._activeCategory ? "sc-tab-active" : ""}"
           data-category="${cat.key}"
+          ${cat.key === "antennas" ? 'data-tour="antenna-tab"' : ""}
         >
           ${cat.label}
           ${flagged.has(cat.key) ? `<span class="sc-tab-dot" title="Engineering warning"></span>` : ""}
@@ -538,8 +565,9 @@ export class SpacecraftConfigurator {
     const iconSvg = CATEGORY_ICONS[this._activeCategory] ?? "";
 
     listEl.innerHTML = items
-      .map((item) => {
+      .map((item, idx) => {
         const isSelected = item.id === selectedId;
+        const isTourStructureTarget = this._activeCategory === "structures" && idx === 0;
         const stats = this._formatItemStats(this._activeCategory, item);
         const advanced = this._formatAdvancedStats(this._activeCategory, item);
         return `
@@ -548,6 +576,7 @@ export class SpacecraftConfigurator {
             tabindex="0"
             class="sc-card ${isSelected ? "sc-card-selected" : ""}"
             data-component-id="${item.id}"
+            ${isTourStructureTarget ? 'data-tour="structure-card"' : ""}
             aria-pressed="${isSelected}"
           >
             <div class="sc-card-top">

@@ -11,6 +11,7 @@ export class GameState {
     this.spacecraft = null;
     this.launch = null;
     this.pendingLaunchCostMillions = 0;
+    this.tutorialMode = false;
     this.phase = "mission"; // "mission" | "spacecraft" | "launch" | "results"
     this._listeners = new Set();
   }
@@ -69,12 +70,21 @@ export class GameState {
     this._notify();
   }
 
+  /** @param {boolean} enabled */
+  setTutorialMode(enabled) {
+    const next = Boolean(enabled);
+    if (this.tutorialMode === next) return;
+    this.tutorialMode = next;
+    this._notify();
+  }
+
   /** Reset all mission selections to start a new game. */
   reset() {
     this.mission = null;
     this.spacecraft = null;
     this.launch = null;
     this.pendingLaunchCostMillions = 0;
+    this.tutorialMode = false;
     this.phase = "mission";
     this._notify();
   }

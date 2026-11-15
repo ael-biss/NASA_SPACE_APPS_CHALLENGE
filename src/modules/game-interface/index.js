@@ -11,6 +11,9 @@ import { GameFlowController } from "./logic/GameFlowController.js";
 import { PhaseStepper } from "./ui/PhaseStepper.js";
 import { ResourceHUD } from "./ui/ResourceHUD.js";
 import { OnboardingGuide } from "./ui/OnboardingGuide.js";
+import { GuidanceStore } from "./logic/GuidanceStore.js";
+import { SpotlightTour } from "./ui/SpotlightTour.js";
+import { applyDocumentDirection } from "../../shared/i18n/index.js";
 import { soundFX } from "../../shared/utils/SoundEffects.js";
 import { StartScreenScene } from "./models/StartScreenScene.js";
 import { StartScreen } from "./ui/StartScreen.js";
@@ -20,8 +23,10 @@ import { StartScreen } from "./ui/StartScreen.js";
  * @param {HTMLElement} rootElement
  */
 export function initGame(rootElement = document.body) {
+  applyDocumentDirection();
   const sceneManager = new SceneManager(rootElement);
   const gameState = new GameState();
+  const guidanceStore = new GuidanceStore();
 
   const shell = document.createElement("div");
   shell.className = "gi-shell";
@@ -66,10 +71,55 @@ export function initGame(rootElement = document.body) {
   const hud = new ResourceHUD(hudEl, gameState);
   hud.mount();
 
-  const guide = new OnboardingGuide(guideControlsEl, guideOverlayEl, gameState);
+  const guide = new OnboardingGuide(guideControlsEl, guideOverlayEl, gameState, {
+    autoTutorial: false,
+    onOpenTutorial: () => {
+      gameState.setTutorialMode(true);
+      if (gameState.phase !== "mission") {
+        flow.setPhase("mission");
+      }
+      flow.activeModule?.selectMission?.("MISSION_EARTH_LEO");
+      spotlightTour.replay();
+    },
+  });
 
+  const spotlightTour = new SpotlightTour(shell, guidanceStore, {
+    onStartTutorial: () => {
+      gameState.setTutorialMode(true);
+      if (gameState.phase !== "mission") {
+        flow.setPhase("mission");
+      }
+      flow.activeModule?.selectMission?.("MISSION_EARTH_LEO");
+      spotlightTour.start(0);
+    },
+    onPrepareStep: (step) => {
+      if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+        document.dispatchEvent(
+          new CustomEvent("orbitcraft:prepare-tour-step", { detail: { step } })
+        );
+      }
+    },
+  });
+
+  const handleTourAction = (e) => {
+    const actionId = e.detail?.actionId;
+    if (actionId) {
+      spotlightTour.markActionCompleted(actionId);
+    }
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("orbitcraft:tour-action", handleTourAction);
+  }
+
+  let lastSyncedPhase = gameState.phase;
   gameState.subscribe((state) => {
     stepper.setActivePhase(state.phase);
+    if (state.phase !== lastSyncedPhase) {
+      lastSyncedPhase = state.phase;
+      if (spotlightTour.isActive()) {
+        spotlightTour.syncPhase(state.phase);
+      }
+    }
   });
 
   // Mount Start Screen (logo + 3D space scene + single START MISSION CTA)
@@ -84,6 +134,9 @@ export function initGame(rootElement = document.body) {
     topbarEl.classList.remove("gi-topbar-hidden");
     guide.mount();
     flow.setPhase("mission");
+    if (guidanceStore.shouldShowWelcomeOnFirstRun()) {
+      spotlightTour.showWelcome();
+    }
   });
   startScreen.mount();
 
@@ -106,9 +159,15 @@ export function initGame(rootElement = document.body) {
     sceneManager,
     gameState,
     flow,
+    guidanceStore,
+    spotlightTour,
     destroy: () => {
       cancelAnimationFrame(rafId);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("orbitcraft:tour-action", handleTourAction);
+      }
       soundFX.stopEngineLoop();
+      spotlightTour.destroy();
       startScreen.destroy();
       startScene.unmount();
       guide.destroy();

@@ -69,6 +69,11 @@ export class LaunchControlPanel {
         this._lastTelemetry = null;
         this._syncPendingLaunchCost();
         this.handlers.onSelectRocket?.(this._selectedRocketId);
+        if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+          document.dispatchEvent(
+            new CustomEvent("orbitcraft:tour-action", { detail: { actionId: "select-rocket" } })
+          );
+        }
         this.render();
         return;
       }
@@ -424,12 +429,12 @@ export class LaunchControlPanel {
           </div>
         </header>
         <div class="lo-scroll">
-          ${rocketCards}
+          <div class="lo-rocket-list" data-tour="launch-vehicle-cards">${rocketCards}</div>
           <div class="lo-subhead">Payload Fairing</div>
           <div class="lo-fairing-list">${fairingChips}</div>
         </div>
         <footer class="lo-footer">
-          <div class="lo-metrics">
+          <div class="lo-metrics" data-tour="launch-metrics-panel">
             <div><span>Stack Δv</span><strong class="${totalDeltaV >= requiredDeltaV ? "lo-ok" : "lo-warn"}">${Math.round(totalDeltaV).toLocaleString()} / ${requiredDeltaV.toLocaleString()} m/s</strong></div>
             <div><span>Payload Mass</span><strong class="${scMass <= selectedRocket.maxPayloadLeoKg ? "lo-ok" : "lo-warn"}">${Math.round(scMass)} / ${selectedRocket.maxPayloadLeoKg} kg</strong></div>
             <div title="Start Budget: $${budget.startingBudget}M · Instruments: $${budget.instrumentsCost.toFixed(1)}M · Spacecraft: $${budget.spacecraftCost.toFixed(1)}M · Launch: $${budget.launchCost.toFixed(1)}M"><span>Cost / Budget</span><strong class="${totalMissionCost <= budgetCap ? "lo-ok" : "lo-warn"}">$${totalMissionCost.toFixed(1)}M / $${budgetCap}M (${budget.startingBudget > 0 ? (budget.budgetRemaining >= 0 ? `${formatBudget(budget.budgetRemaining)} left` : `-$${Math.abs(budget.budgetRemaining).toFixed(1)}M over`) : "—"})</strong></div>
@@ -446,7 +451,7 @@ export class LaunchControlPanel {
           </details>
           ${prelaunchWarnHtml}
           ${scienceWarnHtml}
-          <div class="lo-btn-row">
+          <div class="lo-btn-row" data-tour="launch-controls">
             <button type="button" class="lo-cta" data-action="launch" ${this._flightActive || !spacecraft ? "disabled" : ""}>
               ${this._flightActive ? "Flight in Progress..." : this._flightComplete ? "Re-Launch Mission" : "Launch Mission"}
             </button>
@@ -519,7 +524,7 @@ export class LaunchControlPanel {
                     : this._lastResult.failureCause
                 )}</p>
               </div>
-              <div class="lo-btn-row">
+              <div class="lo-btn-row" data-tour="launch-controls">
                 <button type="button" class="lo-cta" data-action="view-results">View Mission Results →</button>
                 <button type="button" class="lo-btn" data-action="replay">Replay</button>
               </div>
@@ -673,6 +678,13 @@ export class LaunchControlPanel {
         overflow-y: auto;
         display: flex;
         flex-direction: column;
+        gap: 8px;
+      }
+      .lo-rocket-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
         gap: 8px;
         padding-right: 4px;
       }

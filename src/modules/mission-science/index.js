@@ -173,6 +173,14 @@ export function unmount() {
 }
 
 /**
+ * Programmatically select a mission by ID (used when starting the guided tutorial).
+ * @param {string} missionId
+ */
+export function selectMission(missionId) {
+  activeState?.planner?.selectMission(missionId);
+}
+
+/**
  * Evaluate the completed mission for Member 4's Results screen.
  * @param {import('../../core/GameState.js').GameState} gameState
  */

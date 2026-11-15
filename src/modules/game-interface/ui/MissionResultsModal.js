@@ -247,7 +247,7 @@ export class MissionResultsModal {
 
     this.container.innerHTML = `
       <div class="gi-modal-backdrop">
-        <article class="gi-modal" role="dialog" aria-modal="true" aria-label="Mission Results">
+        <article class="gi-modal" role="dialog" aria-modal="true" aria-label="Mission Results" data-tour="results-modal">
           <header class="gi-modal-header">
             <div>
               <span class="gi-modal-badge ${passed ? "gi-ok" : launchResult?.success ? "gi-warn" : "gi-bad"}">${badgeText}</span>
@@ -315,7 +315,7 @@ export class MissionResultsModal {
             </div>
           </details>
 
-          <footer class="gi-modal-actions">
+          <footer class="gi-modal-actions" data-tour="results-actions">
             <button type="button" class="gi-btn gi-btn-download" data-modal-action="download-card">Download Result Card (PNG)</button>
             <button type="button" class="gi-btn gi-btn-primary" data-modal-action="modify">Retry with Fixes</button>
             <button type="button" class="gi-btn" data-modal-action="replay">Change Rocket / Replay</button>
