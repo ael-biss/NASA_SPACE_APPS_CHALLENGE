@@ -2,12 +2,12 @@
  * @file src/styles/main.css
  * @owner Member 4 (Interface & Integration)
  * @goal Global CSS reset, full-viewport Three.js canvas layout, and shared UI theme variables
- *       used across HUD, phase stepper, and module side panels.
+ *       used across HUD, phase stepper, results modal, and module side panels.
  */
 
 :root {
   --bg-space: #0b1120;
-  --bg-panel: rgba(15, 23, 42, 0.85);
+  --bg-panel: rgba(15, 23, 42, 0.88);
   --text-primary: #f8fafc;
   --text-muted: #94a3b8;
   --accent-blue: #38bdf8;
@@ -30,4 +30,321 @@ body {
   background-color: var(--bg-space);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, sans-serif;
+}
+
+.gi-shell {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.gi-topbar {
+  pointer-events: auto;
+  position: fixed;
+  top: 10px;
+  left: 16px;
+  right: 16px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: rgba(11, 17, 32, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+}
+
+.gi-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gi-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(30, 41, 59, 0.65);
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gi-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gi-step-active {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.24);
+  color: #f8fafc;
+}
+
+.gi-step-done {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
+.gi-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  font-size: 10px;
+}
+
+.gi-hud {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow-x: auto;
+}
+
+.gi-hud-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.gi-hud-item span {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.gi-hud-item strong {
+  font-size: 12px;
+  color: #f8fafc;
+}
+
+.gi-ok { color: #4ade80 !important; }
+.gi-warn { color: #fbbf24 !important; }
+.gi-bad { color: #f87171 !important; }
+.gi-muted { color: #94a3b8 !important; }
+
+.gi-module-root {
+  pointer-events: none;
+}
+
+/* Results Modal */
+.gi-modal-backdrop {
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.78);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.gi-modal {
+  width: min(860px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.65);
+}
+
+.gi-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.gi-modal-badge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.gi-modal-header h2 {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.gi-modal-sub {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  margin-top: 4px;
+}
+
+.gi-grade-box {
+  min-width: 78px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-align: center;
+  border: 1px solid;
+}
+
+.gi-grade-pass {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #86efac;
+}
+
+.gi-grade-fail {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.gi-grade {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.gi-failure-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.gi-failure-title {
+  font-weight: 800;
+  color: #fca5a5;
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+
+.gi-fix {
+  margin-top: 6px;
+  color: #fde68a;
+}
+
+.gi-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 760px) {
+  .gi-modal-grid { grid-template-columns: 1fr; }
+  .gi-hud { display: none; }
+}
+
+.gi-modal-col h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #38bdf8;
+  margin-bottom: 8px;
+}
+
+.gi-tl-list,
+.gi-health-list,
+.gi-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gi-tl-item {
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  font-size: 11.5px;
+}
+
+.gi-tl-passed { border-color: rgba(34, 197, 94, 0.4); }
+.gi-tl-failed { border-color: rgba(239, 68, 68, 0.6); background: rgba(127, 29, 29, 0.28); }
+.gi-tl-skipped { opacity: 0.45; }
+
+.gi-tl-body strong { display: block; font-size: 12px; }
+.gi-tl-body span { color: #cbd5e1; font-size: 11px; }
+
+.gi-health-row {
+  background: rgba(30, 41, 59, 0.5);
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.gi-health-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+
+.gi-health-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.8);
+  overflow: hidden;
+}
+
+.gi-health-fill { height: 100%; border-radius: 999px; }
+.gi-bar-ok { background: #22c55e; }
+.gi-bar-warn { background: #f59e0b; }
+.gi-bar-bad { background: #ef4444; }
+
+.gi-check {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: rgba(30, 41, 59, 0.55);
+  border-left: 3px solid;
+}
+
+.gi-check-pass { border-color: #22c55e; }
+.gi-check-fail { border-color: #ef4444; }
+.gi-check strong { display: block; margin-bottom: 2px; }
+.gi-check span { color: #cbd5e1; }
+
+.gi-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  padding-top: 12px;
+}
+
+.gi-btn {
+  background: rgba(30, 41, 59, 0.9);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gi-btn-primary {
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  border-color: #38bdf8;
 }

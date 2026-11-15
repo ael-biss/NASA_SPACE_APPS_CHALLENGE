@@ -6,7 +6,7 @@
  */
 
 import {
-  SUBSYSTEM_CATEGORIES,
+  ALL_SUBSYSTEM_CATEGORIES,
   getComponentsByCategory,
 } from "../data/components.js";
 import {
@@ -66,6 +66,7 @@ export class SpacecraftConfigurator {
         <div class="sc-metric-grid" data-role="metrics"></div>
         <div class="sc-bars" data-role="bars"></div>
         <div class="sc-validation" data-role="validation"></div>
+        <div class="sc-footer-cta" data-role="proceed-wrap"></div>
       </section>
     `;
 
@@ -97,6 +98,8 @@ export class SpacecraftConfigurator {
         target.textContent = `Thruster: ${this._thrustActive ? "Firing" : "Off"}`;
         target.classList.toggle("sc-btn-active", this._thrustActive);
         this.handlers.onToggleThrust?.(this._thrustActive);
+      } else if (target.dataset.action === "proceed-launch") {
+        this.handlers.onProceed?.();
       }
     });
 
@@ -117,18 +120,16 @@ export class SpacecraftConfigurator {
     const metricsEl = this._root.querySelector('[data-role="metrics"]');
     const barsEl = this._root.querySelector('[data-role="bars"]');
     const validationEl = this._root.querySelector('[data-role="validation"]');
+    const proceedEl = this._root.querySelector('[data-role="proceed-wrap"]');
 
     const powerMargin = spacecraftSpec.powerGeneratedWatts - spacecraftSpec.powerConsumedWatts;
     const powerSign = powerMargin >= 0 ? "+" : "";
+    const limits = spacecraftSpec.limits ?? {};
 
     metricsEl.innerHTML = `
       <div class="sc-metric">
         <span>Wet Mass</span>
         <strong>${formatMass(spacecraftSpec.totalMassKg)}</strong>
-      </div>
-      <div class="sc-metric">
-        <span>Dry / Fuel</span>
-        <strong>${formatMass(spacecraftSpec.dryMassKg)} / ${formatMass(spacecraftSpec.propellantMassKg)}</strong>
       </div>
       <div class="sc-metric">
         <span>Onboard Δv</span>
@@ -139,12 +140,16 @@ export class SpacecraftConfigurator {
         <strong>${formatBudget(spacecraftSpec.costMillions)}</strong>
       </div>
       <div class="sc-metric">
-        <span>Comms Range</span>
-        <strong>${spacecraftSpec.maxRangeKm.toLocaleString()} km</strong>
+        <span>Comms / Rate</span>
+        <strong>${spacecraftSpec.maxRangeKm >= 1000000 ? `${Math.round(spacecraftSpec.maxRangeKm / 1000000)}M km` : `${spacecraftSpec.maxRangeKm.toLocaleString()} km`}</strong>
       </div>
       <div class="sc-metric">
-        <span>Data Rate</span>
-        <strong>${spacecraftSpec.maxDataRateKbps} kbps</strong>
+        <span>G / Rad Limit</span>
+        <strong>${(limits.maxG ?? 8).toFixed(1)}g · ${Math.round(limits.effectiveRadLimitKrad ?? 12)}kr</strong>
+      </div>
+      <div class="sc-metric">
+        <span>Thermal / Width</span>
+        <strong>${limits.tempMinC ?? -15}..${limits.tempMaxC ?? 55}°C · ${limits.stowedDiameterM ?? 1.2}m</strong>
       </div>
     `;
 
@@ -187,6 +192,14 @@ export class SpacecraftConfigurator {
       items.push(`<div class="sc-alert sc-alert-warn">${this._escapeHtml(warn)}</div>`);
     }
     validationEl.innerHTML = items.join("");
+
+    if (proceedEl) {
+      proceedEl.innerHTML = this.handlers.onProceed
+        ? `<button type="button" class="sc-cta" data-action="proceed-launch" ${spacecraftSpec.isValid ? "" : "disabled"}>
+            Proceed to Launch &amp; Orbit →
+          </button>`
+        : "";
+    }
   }
 
   /** Remove configurator DOM and event listeners. */
@@ -200,7 +213,7 @@ export class SpacecraftConfigurator {
   _renderTabs() {
     if (!this._root) return;
     const tabsEl = this._root.querySelector(".sc-tabs");
-    tabsEl.innerHTML = SUBSYSTEM_CATEGORIES.map(
+    tabsEl.innerHTML = ALL_SUBSYSTEM_CATEGORIES.map(
       (cat) => `
         <button
           type="button"
@@ -216,7 +229,7 @@ export class SpacecraftConfigurator {
   _renderComponentList() {
     if (!this._root) return;
     const listEl = this._root.querySelector(".sc-list");
-    const catMeta = SUBSYSTEM_CATEGORIES.find((c) => c.key === this._activeCategory);
+    const catMeta = ALL_SUBSYSTEM_CATEGORIES.find((c) => c.key === this._activeCategory);
     const selectedId = this._lastSpec?.selection?.[catMeta?.selectionKey];
     const items = getComponentsByCategory(this._activeCategory);
 
@@ -245,11 +258,23 @@ export class SpacecraftConfigurator {
   _formatItemStats(category, item) {
     switch (category) {
       case "structures":
-        return [`Mass: ${item.massKg} kg`, `Max Load: ${item.maxPayloadMassKg} kg`];
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Max Load: ${item.maxPayloadMassKg} kg`,
+          `Max ${item.maxG}g`,
+        ];
       case "solarPanels":
-        return [`Mass: ${item.massKg} kg`, `Gen: +${item.powerGeneratedWatts} W`];
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Gen: +${item.powerGeneratedWatts} W`,
+          item.deployable ? "Deployable" : "Fixed",
+        ];
       case "batteries":
-        return [`Mass: ${item.massKg} kg`, `Cap: ${item.capacityWh} Wh`];
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Cap: ${item.capacityWh} Wh`,
+          `${item.tempMinC}..${item.tempMaxC}°C`,
+        ];
       case "propulsion":
         return [
           `Dry/Fuel: ${item.dryMassKg}/${item.propellantMassKg} kg`,
@@ -259,14 +284,31 @@ export class SpacecraftConfigurator {
       case "antennas":
         return [
           `Mass: ${item.massKg} kg`,
-          `Range: ${item.maxRangeKm.toLocaleString()} km`,
+          `Range: ${item.maxRangeKm >= 1000000 ? `${Math.round(item.maxRangeKm / 1000000)}M` : item.maxRangeKm.toLocaleString()} km`,
           `Rate: ${item.maxDataRateKbps} kbps`,
         ];
       case "avionics":
         return [
           `Mass: ${item.massKg} kg`,
           `Draw: ${item.powerWatts} W`,
-          item.radHardened ? "Rad-Hardened" : "Standard",
+          `Rad: ${item.radLimitKrad} krad`,
+        ];
+      case "thermalControl":
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Draw: ${item.powerWatts} W`,
+          `Insul: ${Math.round(item.insulationFactor * 100)}%`,
+        ];
+      case "radiationShielding":
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Dose Pass: ${Math.round(item.attenuationFactor * 100)}%`,
+        ];
+      case "reactionWheels":
+        return [
+          `Mass: ${item.massKg} kg`,
+          `Draw: ${item.powerWatts} W`,
+          `Pointing: ±${item.pointingAccuracyDeg}°`,
         ];
       default:
         return [];
@@ -287,10 +329,10 @@ export class SpacecraftConfigurator {
     style.textContent = `
       .sc-panel {
         position: fixed;
-        top: 16px;
+        top: 72px;
         right: 16px;
         bottom: 16px;
-        width: min(400px, calc(100vw - 32px));
+        width: min(410px, calc(100vw - 32px));
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -492,6 +534,21 @@ export class SpacecraftConfigurator {
         background: rgba(239, 68, 68, 0.16);
         border: 1px solid rgba(239, 68, 68, 0.45);
         color: #fca5a5;
+      }
+      .sc-cta {
+        width: 100%;
+        padding: 9px 12px;
+        border-radius: 8px;
+        border: 1px solid #38bdf8;
+        background: linear-gradient(135deg, #0284c7, #0ea5e9);
+        color: #fff;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .sc-cta:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
       }
     `;
     document.head.appendChild(style);

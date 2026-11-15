@@ -13,6 +13,9 @@
  * @property {string} propulsionId - Propulsion system ID
  * @property {string} antennaId - Communications antenna ID
  * @property {string} avionicsId - Avionics/flight computer ID
+ * @property {string} [thermalId] - Thermal control subsystem ID
+ * @property {string} [shieldingId] - Radiation shielding ID
+ * @property {string} [reactionWheelId] - Attitude control / reaction wheel ID
  */
 
 /**
@@ -27,10 +30,12 @@
  * @property {number} powerConsumedWatts - Total power consumed (subsystems + instruments)
  * @property {number} [batteryCapacityWh] - Selected battery pack energy capacity in Watt-hours
  * @property {number} ispSeconds - Specific impulse of chosen propulsion in seconds
+ * @property {number} [thrustN] - Main engine thrust in Newtons
  * @property {number} [deltaVMs] - Spacecraft onboard delta-v capacity in m/s
  * @property {number} maxDataRateKbps - Supported communication data rate in kbps
  * @property {number} maxRangeKm - Supported communication distance in km
  * @property {number} costMillions - Spacecraft hardware cost in $M
+ * @property {Object} [limits] - Physical survivability envelope (maxG, vibrationLimitG, tempRangeC, radLimitKrad, stowedDiameterM, etc.)
  * @property {boolean} isValid - Whether all compatibility checks pass
  * @property {string[]} errors - Blocking compatibility errors
  * @property {string[]} warnings - Non-blocking engineering warnings

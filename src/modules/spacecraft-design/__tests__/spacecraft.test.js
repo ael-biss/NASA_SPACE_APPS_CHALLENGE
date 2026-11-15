@@ -170,3 +170,21 @@ test("Spacecraft mounts procedural and async .glb instruments and ignores stale 
   craft.dispose();
   assert.equal(camDisposed, false);
 });
+
+test("Spacecraft mounts 3D engineering-upgrades and computes thermal/rad/attitude limits", () => {
+  const config = new SpacecraftConfig({
+    ...DEFAULT_SELECTION,
+    thermalId: "active-radiators",
+    shieldingId: "tantalum-poly-shield",
+    reactionWheelId: "cmg-star-tracker",
+  });
+  const spec = config.toSpacecraftSpec();
+  assert.ok(spec.limits.effectiveRadLimitKrad > 400);
+  assert.equal(spec.limits.pointingAccuracyDeg, 0.03);
+  assert.ok(spec.limits.tempMinC <= -65);
+
+  const craft = new Spacecraft();
+  const group = craft.assemble(spec.selection);
+  assert.ok(group.getObjectByName("engineering-upgrades"));
+  craft.dispose();
+});

@@ -87,6 +87,41 @@ export class Compatibility {
           `Standard avionics are not radiation-hardened for ${missionSpec.targetOrbitId} environments.`
         );
       }
+
+      // 5. Deep-space solar flux check (Mars receives ~43% of Earth sunlight)
+      if (missionSpec.targetOrbitId === "MARS") {
+        const marsSolarW = metrics.powerGeneratedWatts * 0.43;
+        if (marsSolarW < metrics.powerConsumedWatts) {
+          warnings.push(
+            `At Mars (1.52 AU, 43% solar flux), panels yield ~${Math.round(marsSolarW)} W vs ${metrics.powerConsumedWatts} W load — upgrade Solar Panels or risk Cruise power loss.`
+          );
+        }
+      }
+
+      // 6. Thermal / shielding / attitude warnings for Lunar & Mars
+      if (
+        (missionSpec.targetOrbitId === "LUNAR" || missionSpec.targetOrbitId === "MARS") &&
+        metrics.limits
+      ) {
+        if (metrics.limits.thermalId === "baseline-mli") {
+          warnings.push(
+            `Baseline MLI foil lacks heaters/radiators for ${missionSpec.targetOrbitId} thermal extremes.`
+          );
+        }
+        if (
+          missionSpec.targetOrbitId === "MARS" &&
+          metrics.limits.shieldingId === "none-shield"
+        ) {
+          warnings.push(
+            "Unshielded electronics face severe solar particle radiation during Mars cruise."
+          );
+        }
+        if (metrics.limits.pointingAccuracyDeg > metrics.limits.minAntennaPointingDeg) {
+          warnings.push(
+            `Attitude pointing (±${metrics.limits.pointingAccuracyDeg}°) is coarser than antenna beamwidth (±${metrics.limits.minAntennaPointingDeg}°) — add Reaction Wheels.`
+          );
+        }
+      }
     }
 
     return {

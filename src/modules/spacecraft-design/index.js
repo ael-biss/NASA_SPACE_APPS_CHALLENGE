@@ -20,7 +20,7 @@ let activeState = null;
  * @param {import('../../core/GameState.js').GameState} gameState
  * @param {HTMLElement} uiContainer
  */
-export function mount(sceneManager, gameState, uiContainer) {
+export function mount(sceneManager, gameState, uiContainer, options = {}) {
   unmount();
 
   const bayGroup = new THREE.Group();
@@ -82,6 +82,7 @@ export function mount(sceneManager, gameState, uiContainer) {
     },
     onToggleSolar: (deployed) => spacecraft.setSolarDeployed(deployed),
     onToggleThrust: (active) => spacecraft.setThrustActive(active),
+    onProceed: options.onProceed,
   });
 
   configurator.mount();
