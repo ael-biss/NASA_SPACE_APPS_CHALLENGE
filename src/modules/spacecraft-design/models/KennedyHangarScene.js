@@ -455,8 +455,8 @@ export class KennedyHangarScene {
   }
 
   _buildSignageAndFlag() {
-    // Large "NASA KENNEDY SPACE CENTER" wall sign on the left wall (-X)
-    const signTex = this._createNasaKscBannerTexture();
+    // Large "NASA SPACE APPS" wall sign on the left wall (-X)
+    const signTex = this._createNasaSpaceAppsBannerTexture();
     const signMat = new THREE.MeshStandardMaterial({
       map: signTex ?? null,
       color: signTex ? 0xffffff : 0xf1f5f9,
@@ -468,11 +468,11 @@ export class KennedyHangarScene {
     kscSign.rotation.y = Math.PI / 2;
     this.group.add(kscSign);
 
-    // US Flag banner on the left wall beside the bay door
-    const flagTex = this._createUsFlagTexture();
+    // Morocco Flag banner on the left wall beside the bay door
+    const flagTex = this._createMoroccoFlagTexture();
     const flagMat = new THREE.MeshStandardMaterial({
       map: flagTex ?? null,
-      color: flagTex ? 0xffffff : 0x1e3a8a,
+      color: flagTex ? 0xffffff : 0xc1272d,
       roughness: 0.6,
       metalness: 0.05,
     });
@@ -661,7 +661,7 @@ export class KennedyHangarScene {
     return this._registerTexture(canvas);
   }
 
-  _createNasaKscBannerTexture() {
+  _createNasaSpaceAppsBannerTexture() {
     const canvas = this._createCanvas(1024, 420);
     if (!canvas) return null;
     const ctx = canvas.getContext("2d");
@@ -722,42 +722,63 @@ export class KennedyHangarScene {
     ctx.textBaseline = "middle";
     ctx.fillText("NASA", cx, cy + 8);
 
-    // "KENNEDY SPACE CENTER" text on the right
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "800 68px system-ui, -apple-system, sans-serif";
+    // "NASA SPACE APPS" text on the right
+    ctx.fillStyle = "#0b3d91";
+    ctx.font = "800 72px system-ui, -apple-system, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("KENNEDY", 435, 145);
-    ctx.fillText("SPACE", 435, 225);
-    ctx.fillText("CENTER", 435, 305);
+    ctx.fillText("NASA", 435, 135);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "800 80px system-ui, -apple-system, sans-serif";
+    ctx.fillText("SPACE", 435, 222);
+    ctx.fillText("APPS", 435, 308);
 
     return this._registerTexture(canvas);
   }
 
-  _createUsFlagTexture() {
+  _createMoroccoFlagTexture() {
     const canvas = this._createCanvas(390, 520);
     if (!canvas) return null;
     const ctx = canvas.getContext("2d");
 
-    // Hanging vertical stripes (13 stripes)
-    const stripeW = 390 / 13;
-    for (let i = 0; i < 13; i++) {
-      ctx.fillStyle = i % 2 === 0 ? "#b91c1c" : "#f8fafc";
-      ctx.fillRect(i * stripeW, 0, stripeW + 1, 520);
+    // Moroccan crimson red field
+    ctx.fillStyle = "#c1272d";
+    ctx.fillRect(0, 0, 390, 520);
+
+    // Centered green 5-pointed pentagram (Seal of Solomon)
+    const cx = 195;
+    const cy = 260;
+    const outerR = 112;
+    const pts = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+      pts.push([cx + Math.cos(angle) * outerR, cy + Math.sin(angle) * outerR]);
     }
 
-    // Blue union in top-left
-    ctx.fillStyle = "#1e3a8a";
-    ctx.fillRect(0, 0, stripeW * 7, 250);
+    const order = [0, 2, 4, 1, 3, 0];
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
 
-    // Star grid
-    ctx.fillStyle = "#ffffff";
-    for (let row = 0; row < 6; row++) {
-      for (let col = 0; col < 5; col++) {
-        ctx.beginPath();
-        ctx.arc(20 + col * 38, 22 + row * 40, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    // Subtle dark-red edge for crisp separation, then Moroccan green stroke
+    ctx.strokeStyle = "#7f1d1d";
+    ctx.lineWidth = 20;
+    ctx.beginPath();
+    ctx.moveTo(pts[order[0]][0], pts[order[0]][1]);
+    for (let i = 1; i < order.length; i++) {
+      ctx.lineTo(pts[order[i]][0], pts[order[i]][1]);
     }
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.strokeStyle = "#006233";
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.moveTo(pts[order[0]][0], pts[order[0]][1]);
+    for (let i = 1; i < order.length; i++) {
+      ctx.lineTo(pts[order[i]][0], pts[order[i]][1]);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
     return this._registerTexture(canvas);
   }
 
