@@ -1097,46 +1097,47 @@ export class LaunchAnimation {
 
     const origin = this._stackGroup ? this._stackGroup.position.clone() : new THREE.Vector3();
 
-    if (mode === "explosion" || mode === "structural-breakup" || mode === "suborbital-fall") {
-      const blastScale = mode === "explosion" ? 1.35 : 1.15;
-      this._spawnExplosion(origin, blastScale, true);
-      this._secondaryBlastOrigin = origin.clone().add(
-        new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)
-      );
+    const blastScale =
+      mode === "explosion"
+        ? 1.35
+        : mode === "structural-breakup" || mode === "suborbital-fall"
+          ? 1.15
+          : 1.05;
 
-      // Break the actual spacecraft and vehicle into tumbling parts that fade out and disappear
-      this._shatterGroupIntoParts(this._spacecraftGroup, origin, 1.5, 2.4);
-      if (this._spacecraftGroup) {
-        this._spacecraftGroup.visible = false;
-      }
-      if (this._fairingLeft?.visible) {
-        this._shatterGroupIntoParts(this._fairingLeft, origin, 1.8, 2.1);
-        this._shatterGroupIntoParts(this._fairingRight, origin, 1.8, 2.1);
-        this._fairingLeft.visible = false;
-        this._fairingRight.visible = false;
-      }
-      if (this._stage1Group?.visible) {
-        this._shatterGroupIntoParts(this._stage1Group, origin, 1.2, 2.3);
-        this._stage1Group.visible = false;
-      }
-      if (this._stage2Group?.visible) {
-        this._shatterGroupIntoParts(this._stage2Group, origin, 1.3, 2.3);
-        this._stage2Group.visible = false;
-      }
-      if (this._boosterGroup?.visible) {
-        this._shatterGroupIntoParts(this._boosterGroup, origin, 1.2, 2.3);
-        this._boosterGroup.visible = false;
-      }
-      if (this._stackGroup) {
-        this._stackGroup.visible = false;
-      }
-    } else if (mode === "thermal-failure") {
-      this._spawnSparkBurst(origin, 0xef4444, 34);
-    } else if (mode === "radiation-fried" || mode === "power-loss" || mode === "signal-lost") {
-      this._spawnSparkBurst(origin, 0x38bdf8, 30);
-    } else {
-      // missed-capture
-      this._spawnSparkBurst(origin, 0xf59e0b, 28);
+    this._spawnExplosion(origin, blastScale, true);
+    this._secondaryBlastOrigin = origin.clone().add(
+      new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)
+    );
+
+    // Break the actual spacecraft and visible vehicle stages into tumbling parts that fade out and disappear
+    this._shatterGroupIntoParts(this._spacecraftGroup, origin, 1.5, 2.4);
+    if (this._spacecraftGroup) {
+      this._spacecraftGroup.visible = false;
+    }
+    if (this._fairingLeft?.visible) {
+      this._shatterGroupIntoParts(this._fairingLeft, origin, 1.8, 2.1);
+      this._shatterGroupIntoParts(this._fairingRight, origin, 1.8, 2.1);
+      this._fairingLeft.visible = false;
+      this._fairingRight.visible = false;
+    }
+    if (this._sideBoostersGroup?.visible) {
+      this._shatterGroupIntoParts(this._sideBoostersGroup, origin, 1.4, 2.2);
+      this._sideBoostersGroup.visible = false;
+    }
+    if (this._stage1Group?.visible) {
+      this._shatterGroupIntoParts(this._stage1Group, origin, 1.2, 2.3);
+      this._stage1Group.visible = false;
+    }
+    if (this._stage2Group?.visible) {
+      this._shatterGroupIntoParts(this._stage2Group, origin, 1.3, 2.3);
+      this._stage2Group.visible = false;
+    }
+    if (this._boosterGroup?.visible) {
+      this._shatterGroupIntoParts(this._boosterGroup, origin, 1.2, 2.3);
+      this._boosterGroup.visible = false;
+    }
+    if (this._stackGroup) {
+      this._stackGroup.visible = false;
     }
 
     this._onPhaseUpdate?.(this._activePhaseIndex, failedPhase, {
