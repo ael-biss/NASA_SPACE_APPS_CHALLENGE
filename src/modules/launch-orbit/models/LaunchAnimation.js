@@ -1127,13 +1127,6 @@ export class LaunchAnimation {
         this._shatterGroupIntoParts(this._boosterGroup, origin, 1.2, 2.3);
         this._boosterGroup.visible = false;
       }
-        this._fairingLeft.visible = false;
-        this._fairingRight.visible = false;
-      }
-      if (this._boosterGroup?.visible) {
-        this._shatterGroupIntoParts(this._boosterGroup, origin, 1.2, 2.3);
-        this._boosterGroup.visible = false;
-      }
       if (this._stackGroup) {
         this._stackGroup.visible = false;
       }
