@@ -302,50 +302,20 @@ export class InstrumentPayload {
     const plateW = Math.max(0.11, cradleW * 1.12);
     const plateH = Math.max(0.11, cradleH * 1.12);
 
-    // Magnetometers sit on an extended boom to isolate them from bus magnetic interference
-    const isBoom = instrument.id === "INS_MAG_01";
-    const effectiveStandoff = isBoom ? standoff * 1.85 : standoff;
-    const effectiveTargetSize = isBoom ? targetSize * 1.35 : targetSize;
-    const modelScale = maxDim > 0 ? effectiveTargetSize / maxDim : 1;
+    // Instruments are stowed INSIDE the bus (showcase only): no external flanges,
+    // trusses or cables. Each sits just behind the skin of its slot, fully enclosed.
+    const modelScale = maxDim > 0 ? targetSize * 0.85 / maxDim : 1;
+    const inset = targetSize * 0.85 + 0.05;
 
     const mountGroup = new THREE.Group();
     mountGroup.name = `instrument:${instrument.id}`;
-    mountGroup.position.copy(slot.position);
+    mountGroup.position.copy(slot.position).addScaledVector(slot.normal, -inset);
     mountGroup.rotation.y = Math.atan2(slot.normal.x, slot.normal.z);
 
-    const busPortPos = this._buildBulkheadInterface(mountGroup, plateW, plateH, materials);
-    this._buildSupportTruss(
-      mountGroup,
-      plateW,
-      plateH,
-      cradleW,
-      cradleH,
-      effectiveStandoff,
-      isBoom,
-      materials
-    );
-    const instPortPos = this._buildAdapterCradle(
-      mountGroup,
-      cradleW,
-      cradleH,
-      effectiveStandoff,
-      materials
-    );
-    this._buildUmbilicalHarness(
-      mountGroup,
-      busPortPos,
-      instPortPos,
-      effectiveStandoff,
-      materials
-    );
-
-    // Lock the instrument's rear (-Z) mounting face flush onto the adapter cradle so all sensors aim +Z outward
-    const adapterFrontZ = effectiveStandoff + 0.008;
     const pivot = new THREE.Group();
     rawModel.position.set(-center.x, -center.y, -box.min.z);
     pivot.add(rawModel);
     pivot.scale.setScalar(modelScale);
-    pivot.position.z = adapterFrontZ - 0.003;
     mountGroup.add(pivot);
 
     return mountGroup;
