@@ -1,164 +1,122 @@
 /**
  * @file src/modules/launch-orbit/data/rockets.js
  * @owner Member 3 (Launch & Orbit)
- * @goal Database of available launch vehicles (SmallSat, Medium, Heavy) with
- *       max payload mass to LEO, delta-v boost capability, fairing constraints, and cost.
- *
- * ═══════════════════════════════════════════════════════════════════════
- * NOTES
- * ═══════════════════════════════════════════════════════════════════════
- * These are STYLIZED vehicles inspired by real launcher classes
- * (Electron, Falcon 9, Falcon Heavy, Saturn V / SLS). Masses, Isp and
- * thrust are rounded approximations of public figures, not exact specs.
- *
- * payloadCapacityKg is the published-style limit per orbit. Each limit was
- * set ~10-15% BELOW the payload at which the Tsiolkovsky Δv budget
- * (orbits.js requiredDeltaVMs) would run out, so a payload that fits the
- * table also passes the Δv check in OrbitMechanics.simulateLaunch().
- * `{ max: 0 }` means the vehicle cannot reach that orbit.
- * If you edit stage masses, Isp or orbit Δv values, re-run the test
- * (tests/launchMatrix.test.mjs) to keep the two consistent.
- *
- * STAGE FIELDS (read by RocketPhysics.js / OrbitMechanics.js)
- *   dryMassKg, propellantMassKg,
- *   ispSeaLevelS, ispVacuumS,
- *   thrustSeaLevelN (first stage), thrustVacuumN (upper stages)
- * Strap-on boosters are lumped into stage 1 (Falcon Heavy-class).
- * ═══════════════════════════════════════════════════════════════════════
+ * @goal Database of available launch vehicles and payload fairings with real physics specs:
+ *       liftoff thrust, vehicle mass, max payload to LEO, delta-v boost, fairing diameter,
+ *       peak Max-Q pressure, launch g-load, vibration RMS, and cost.
  */
 
 export const ROCKETS = [
   {
-    id: 'SMALLSAT',
-    name: 'Electron-class SmallSat Launcher',
-    category: 'SmallSat',
-    description: 'Cheap dedicated launch for cubesats and microsatellites. LEO only.',
-    costMillionUsd: 7,
-    fairing: { diameterM: 1.2, heightM: 2.5 },
-    stages: [
-      {
-        name: 'Stage 1',
-        dryMassKg: 950,
-        propellantMassKg: 9250,
-        ispSeaLevelS: 303,
-        ispVacuumS: 311,
-        thrustSeaLevelN: 190000
-      },
-      {
-        name: 'Stage 2',
-        dryMassKg: 250,
-        propellantMassKg: 2050,
-        ispVacuumS: 343,
-        thrustVacuumN: 25800
-      }
-    ],
-    payloadCapacityKg: {
-      LEO: { max: 200 },
-      MEO: { max: 0 },
-      GEO: { max: 0 },
-      LUNAR: { max: 0 }
-    }
+    id: "microlaunch",
+    name: "MicroLaunch SmallSat",
+    class: "Small-Lift",
+    maxPayloadLeoKg: 320,
+    launcherDeltaVMs: 9500,
+    fairingDiameterM: 1.2,
+    costMillions: 8.5,
+    liftoffThrustKN: 340,
+    liftoffMassKg: 24500,
+    maxQPa: 32000,
+    peakLaunchG: 7.8,
+    vibrationGrms: 7.3,
+    description:
+      "Dedicated small-satellite launcher optimized for CubeSats and lightweight LEO payloads.",
   },
   {
-    id: 'MEDIUM',
-    name: 'Falcon-class Medium Launcher',
-    category: 'Medium',
-    description: 'Workhorse two-stage vehicle for most commercial satellites.',
-    costMillionUsd: 70,
-    fairing: { diameterM: 5.2, heightM: 13.1 },
-    stages: [
-      {
-        name: 'Stage 1',
-        dryMassKg: 25600,
-        propellantMassKg: 395700,
-        ispSeaLevelS: 282,
-        ispVacuumS: 311,
-        thrustSeaLevelN: 7607000
-      },
-      {
-        name: 'Stage 2',
-        dryMassKg: 4000,
-        propellantMassKg: 107500,
-        ispVacuumS: 348,
-        thrustVacuumN: 934000
-      }
-    ],
-    payloadCapacityKg: {
-      LEO: { max: 18000 },
-      MEO: { max: 3500 },
-      GEO: { max: 2800 },
-      LUNAR: { max: 4500 }
-    }
+    id: "solid-sprint",
+    name: "Solid-Stage Express",
+    class: "Medium-Solid",
+    maxPayloadLeoKg: 850,
+    launcherDeltaVMs: 11200,
+    fairingDiameterM: 2.2,
+    costMillions: 16.0,
+    liftoffThrustKN: 1450,
+    liftoffMassKg: 82000,
+    maxQPa: 39000,
+    peakLaunchG: 9.0,
+    vibrationGrms: 8.5,
+    description:
+      "Budget solid-motor rocket with high thrust and lower cost, but severe launch g-loads and acoustic vibration.",
   },
   {
-    id: 'HEAVY',
-    name: 'Falcon Heavy-class Heavy Launcher',
-    category: 'Heavy',
-    description: 'Three-core heavy lifter (modelled as a strapped-on stage 1) for big GEO and lunar payloads.',
-    costMillionUsd: 150,
-    fairing: { diameterM: 5.2, heightM: 13.1 },
-    stages: [
-      {
-        name: 'Core + boosters',
-        dryMassKg: 92000,
-        propellantMassKg: 1230000,
-        ispSeaLevelS: 282,
-        ispVacuumS: 311,
-        thrustSeaLevelN: 22800000
-      },
-      {
-        name: 'Stage 2',
-        dryMassKg: 4000,
-        propellantMassKg: 107500,
-        ispVacuumS: 348,
-        thrustVacuumN: 934000
-      }
-    ],
-    payloadCapacityKg: {
-      LEO: { max: 35000 },
-      MEO: { max: 8500 },
-      GEO: { max: 7000 },
-      LUNAR: { max: 10000 }
-    }
+    id: "medium-orbital",
+    name: "Medium Orbital LV",
+    class: "Medium-Lift",
+    maxPayloadLeoKg: 1200,
+    launcherDeltaVMs: 11800,
+    fairingDiameterM: 3.2,
+    costMillions: 28.0,
+    liftoffThrustKN: 1850,
+    liftoffMassKg: 138000,
+    maxQPa: 31000,
+    peakLaunchG: 5.2,
+    vibrationGrms: 5.4,
+    description:
+      "Reusable two-stage liquid workhorse capable of delivering medium buses to LEO, MEO, and GEO.",
   },
   {
-    id: 'SUPERHEAVY',
-    name: 'Saturn-class Super-Heavy Launcher',
-    category: 'Super-Heavy',
-    description: 'Three-stage moon rocket for the largest payloads and crewed lunar missions.',
-    costMillionUsd: 800,
-    fairing: { diameterM: 8.4, heightM: 20 },
-    stages: [
-      {
-        name: 'Stage 1',
-        dryMassKg: 140000,
-        propellantMassKg: 2100000,
-        ispSeaLevelS: 263,
-        ispVacuumS: 304,
-        thrustSeaLevelN: 34000000
-      },
-      {
-        name: 'Stage 2',
-        dryMassKg: 36000,
-        propellantMassKg: 440000,
-        ispVacuumS: 421,
-        thrustVacuumN: 1100000
-      },
-      {
-        name: 'Stage 3',
-        dryMassKg: 12000,
-        propellantMassKg: 105000,
-        ispVacuumS: 450,
-        thrustVacuumN: 110000
-      }
-    ],
-    payloadCapacityKg: {
-      LEO: { max: 125000 },
-      MEO: { max: 40000 },
-      GEO: { max: 35000 },
-      LUNAR: { max: 45000 }
-    }
-  }
+    id: "heavy-lift",
+    name: "Heavy Lift LV",
+    class: "Heavy-Lift",
+    maxPayloadLeoKg: 2500,
+    launcherDeltaVMs: 12800,
+    fairingDiameterM: 4.6,
+    costMillions: 52.0,
+    liftoffThrustKN: 4400,
+    liftoffMassKg: 315000,
+    maxQPa: 29500,
+    peakLaunchG: 4.6,
+    vibrationGrms: 4.7,
+    description:
+      "High-energy multi-core launch vehicle built for GEO telecom satellites and LRO-class Lunar orbiters.",
+  },
+  {
+    id: "super-heavy",
+    name: "Super-Heavy Deep Space",
+    class: "Super-Heavy",
+    maxPayloadLeoKg: 5000,
+    launcherDeltaVMs: 13800,
+    fairingDiameterM: 5.4,
+    costMillions: 85.0,
+    liftoffThrustKN: 9200,
+    liftoffMassKg: 640000,
+    maxQPa: 28000,
+    peakLaunchG: 4.2,
+    vibrationGrms: 4.1,
+    description:
+      "Flagship deep-space launch system providing massive payload capacity, gentle ride, and Mars injection energy.",
+  },
+];
+
+export const FAIRINGS = [
+  {
+    id: "standard-fairing",
+    name: "Standard Composite Fairing",
+    massKg: 0,
+    costMillions: 0,
+    protectsAero: true,
+    vibrationDamping: 1.0,
+    description: "Standard aerodynamic nose cone protecting payload through Max-Q.",
+  },
+  {
+    id: "reinforced-fairing",
+    name: "Acoustic-Damped Heavy Fairing",
+    massKg: 35,
+    costMillions: 2.5,
+    protectsAero: true,
+    vibrationDamping: 0.62,
+    description: "Acoustic blanket & isolator ring cutting launch vibration by 38% for fragile optics.",
+  },
+  {
+    id: "no-fairing",
+    name: "Unfaired Adapter (Exposed)",
+    massKg: 0,
+    costMillions: 0,
+    protectsAero: false,
+    vibrationDamping: 1.15,
+    description: "Mass-saving exposed mount; leaves panels and dishes unprotected against Max-Q airflow.",
+  },
 ];
 
 /**
