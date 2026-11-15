@@ -51,30 +51,185 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const controls = new OrbitControls(sceneManager.camera, sceneManager.renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
-  controls.minDistance = 1.4;
-  controls.maxDistance = 38;
+  controls.minDistance = 0.18;
+  controls.maxDistance = 180;
 
   const isDeepSpace = orbit.id === "LUNAR" || orbit.id === "MARS";
-  const camPos = isDeepSpace
+  const baseCamPos = isDeepSpace
     ? new THREE.Vector3(orbit.orbitRadius3D * 0.45, 5.5, 11.5)
     : new THREE.Vector3(3.6, 2.8, 7.2);
-  const camTarget = isDeepSpace
+  const baseCamTarget = isDeepSpace
     ? new THREE.Vector3(orbit.orbitRadius3D * 0.4, 0, 0)
     : new THREE.Vector3(0, 0, 0);
-  controls.target.copy(camTarget);
-  sceneManager.setCamera(camPos, camTarget);
+  controls.target.copy(baseCamTarget);
+  sceneManager.setCamera(baseCamPos, baseCamTarget);
   controls.update();
 
   let currentSpacecraftHandle = null;
   let lastLaunchArgs = null;
   let userDragged = false;
-  const followTarget = new THREE.Vector3().copy(camTarget);
-  const smoothedFocus = new THREE.Vector3().copy(camTarget);
+  let focusMode = "auto";
+  const partScales = {
+    scene: 1,
+    rocket: 1,
+    spacecraft: 1,
+    earth: 1,
+    destination: 1,
+    orbit: 1,
+  };
+  const followTarget = new THREE.Vector3().copy(baseCamTarget);
+  const smoothedFocus = new THREE.Vector3().copy(baseCamTarget);
 
   const onControlStart = () => {
     userDragged = true;
   };
   controls.addEventListener("start", onControlStart);
+
+  const buildSpacecraftForStage = () => {
+    if (currentSpacecraftHandle?.spacecraft) {
+      currentSpacecraftHandle.spacecraft.dispose();
+    }
+    buildSpacecraftForStage();
+  };
+
+  const previewPadStack = (rocketId, fairingId) => {
+    if (launchAnimation.running || launchAnimation._orbiting) return;
+    const rocket = getRocketById(rocketId) ?? getRocketById("heavy-lift");
+    buildSpacecraftForStage();
+    const siteFrame = planetScene.getLaunchSiteFrame(launchSite, initialDvBreakdown.azimuthDeg);
+    launchAnimation.preview(rocket, currentSpacecraftHandle, orbit, {
+      fairingId,
+      siteFrame,
+      getSiteFrame: () => planetScene.getLaunchSiteFrame(launchSite, initialDvBreakdown.azimuthDeg),
+    });
+    if (focusMode === "vehicle") {
+      const target = launchAnimation.getVehicleFocusTarget().multiplyScalar(partScales.scene);
+      followTarget.copy(target);
+      smoothedFocus.copy(target);
+      controls.target.copy(target);
+      controls.update();
+    }
+  };
+
+  const zoomBy = (factor) => {
+    userDragged = true;
+    const offset = sceneManager.camera.position.clone().sub(controls.target);
+    if (offset.lengthSq() < 1e-6) {
+      offset.set(0.5, 0.4, 1.0);
+    }
+    const nextDist = Math.max(
+      controls.minDistance,
+      Math.min(controls.maxDistance, offset.length() * factor)
+    );
+    offset.setLength(nextDist);
+    sceneManager.camera.position.copy(controls.target).add(offset);
+    controls.update();
+  };
+
+  const focusCameraOn = (mode, { resetScales = false } = {}) => {
+    focusMode = mode || "auto";
+    if (resetScales) {
+      applyPartScales({
+        scene: 1,
+        rocket: 1,
+        spacecraft: 1,
+        earth: 1,
+        destination: 1,
+        orbit: 1,
+      });
+    }
+
+    const sScene = partScales.scene;
+    if (focusMode === "vehicle") {
+      const target = launchAnimation.getVehicleFocusTarget().multiplyScalar(sScene);
+      const curDir = sceneManager.camera.position.clone().sub(controls.target);
+      if (curDir.lengthSq() < 1e-5) {
+        curDir.set(0.6, 0.45, 1.0);
+      }
+      const inspectDist = Math.max(
+        0.55,
+        1.45 * sScene * Math.max(partScales.rocket, partScales.spacecraft)
+      );
+      curDir.normalize().multiplyScalar(inspectDist);
+      followTarget.copy(target);
+      smoothedFocus.copy(target);
+      controls.target.copy(target);
+      sceneManager.camera.position.copy(target).add(curDir);
+      controls.update();
+      return;
+    }
+
+    if (focusMode === "earth") {
+      userDragged = true;
+      const target = new THREE.Vector3(0, 0, 0);
+      const dir = sceneManager.camera.position.clone().sub(controls.target);
+      if (dir.lengthSq() < 1e-5) dir.set(0.55, 0.35, 1.0);
+      const dist = Math.max(2.8, 5.2 * partScales.earth * sScene);
+      dir.normalize().multiplyScalar(dist);
+      followTarget.copy(target);
+      smoothedFocus.copy(target);
+      controls.target.copy(target);
+      sceneManager.camera.position.copy(target).add(dir);
+      controls.update();
+      return;
+    }
+
+    if (focusMode === "orbit" || (!launchAnimation.running && !launchAnimation._orbiting)) {
+      if (focusMode === "orbit") userDragged = true;
+      else userDragged = false;
+      const sysScale = sScene * partScales.orbit;
+      const target = baseCamTarget.clone().multiplyScalar(sysScale);
+      const pos = baseCamPos.clone().multiplyScalar(sysScale);
+      followTarget.copy(target);
+      smoothedFocus.copy(target);
+      controls.target.copy(target);
+      sceneManager.camera.position.copy(pos);
+      controls.update();
+      return;
+    }
+
+    // "auto" during flight / orbit: re-enable automatic camera tracking
+    userDragged = false;
+    const focus = launchAnimation.getFocusTarget().clone().multiplyScalar(sScene);
+    followTarget.copy(focus);
+    smoothedFocus.copy(focus);
+    controls.target.copy(focus);
+    controls.update();
+  };
+
+  const applyPartScales = (nextScales = {}) => {
+    const clampScale = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0.25, Math.min(4.5, n)) : fallback;
+    };
+    partScales.scene = clampScale(nextScales.scene, partScales.scene);
+    partScales.rocket = clampScale(nextScales.rocket, partScales.rocket);
+    partScales.spacecraft = clampScale(nextScales.spacecraft, partScales.spacecraft);
+    partScales.earth = clampScale(nextScales.earth, partScales.earth);
+    partScales.destination = clampScale(nextScales.destination, partScales.destination);
+    partScales.orbit = clampScale(nextScales.orbit, partScales.orbit);
+
+    rootGroup.scale.setScalar(partScales.scene);
+    planetScene.setPartScales({
+      earth: partScales.earth,
+      destination: partScales.destination,
+      orbit: partScales.orbit,
+    });
+    launchAnimation.setPartScales(partScales);
+
+    controls.minDistance = Math.max(0.08, 0.18 * partScales.scene);
+    controls.maxDistance = Math.max(120, 180 * partScales.scene * Math.max(1, partScales.orbit));
+
+    if (focusMode === "vehicle") {
+      const target = launchAnimation.getVehicleFocusTarget().multiplyScalar(partScales.scene);
+      const delta = target.clone().sub(controls.target);
+      controls.target.copy(target);
+      followTarget.copy(target);
+      smoothedFocus.copy(target);
+      sceneManager.camera.position.add(delta);
+      controls.update();
+    }
+  };
 
   const startFlight = (rocketId, orbitId, fairingId) => {
     lastLaunchArgs = { rocketId, orbitId, fairingId };
@@ -96,14 +251,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     if (currentSpacecraftHandle?.spacecraft) {
       currentSpacecraftHandle.spacecraft.dispose();
     }
-    if (gameState.spacecraft) {
-      currentSpacecraftHandle = buildSpacecraftModel(
-        gameState.spacecraft,
-        gameState.mission?.instruments ?? []
-      );
-    } else {
-      currentSpacecraftHandle = null;
-    }
+    buildSpacecraftForStage();
 
     panel.setFlightState(launchResult);
 
@@ -158,7 +306,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     });
 
     // Frame the camera cleanly at the KSC launch pad for T-3 countdown
-    const padFocus = launchAnimation.getFocusTarget();
+    const padFocus = launchAnimation.getFocusTarget().clone().multiplyScalar(partScales.scene);
     followTarget.copy(padFocus);
     smoothedFocus.copy(padFocus);
     controls.target.copy(padFocus);
@@ -168,14 +316,29 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
       .addScaledVector(siteFrame.heading, 1.8)
       .add(new THREE.Vector3(0.4, 0.5, 1.9))
       .normalize()
-      .multiplyScalar(2.4);
+      .multiplyScalar(2.4 * partScales.scene * Math.max(0.75, partScales.rocket));
     sceneManager.camera.position.copy(padFocus).add(padViewOffset);
     controls.update();
   };
 
   const panel = new LaunchControlPanel(uiContainer, gameState, {
+    onSelectRocket: (rocketId) => previewPadStack(rocketId, panel.getSelectedFairingId()),
+    onSelectFairing: (fairingId) => previewPadStack(panel.getSelectedRocketId(), fairingId),
     onLaunch: (rocketId, orbitId, fairingId) => startFlight(rocketId, orbitId, fairingId),
     onSpeedChange: (speed) => launchAnimation.setSpeed(speed),
+    onZoom: (factor) => zoomBy(factor),
+    onResetView: () => focusCameraOn("auto"),
+    onFocusMode: (mode) => focusCameraOn(mode),
+    onPartScaleChange: (scales) => applyPartScales(scales),
+    onResetPartScales: () =>
+      applyPartScales({
+        scene: 1,
+        rocket: 1,
+        spacecraft: 1,
+        earth: 1,
+        destination: 1,
+        orbit: 1,
+      }),
     onViewResults: () => options.onProceed?.(),
     onReplay: () => {
       if (lastLaunchArgs) {
@@ -184,6 +347,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     },
   });
   panel.mount();
+  previewPadStack(panel.getSelectedRocketId(), panel.getSelectedFairingId());
 
   activeState = {
     sceneManager,
@@ -194,6 +358,8 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     panel,
     followTarget,
     smoothedFocus,
+    partScales,
+    getFocusMode: () => focusMode,
     isUserDragged: () => userDragged,
     onControlStart,
     getSpacecraftHandle: () => currentSpacecraftHandle,
@@ -213,15 +379,24 @@ export function update(deltaTime) {
     sceneManager,
     followTarget,
     smoothedFocus,
+    partScales,
+    getFocusMode,
     isUserDragged,
   } = activeState;
 
   planetScene.update(deltaTime, launchAnimation.running);
   launchAnimation.update(deltaTime);
 
-  const shouldFollow = launchAnimation.running || launchAnimation._orbiting;
+  const focusMode = getFocusMode();
+  const isFlightTracking = launchAnimation.running || launchAnimation._orbiting;
+  const shouldFollow =
+    focusMode === "vehicle" || (focusMode === "auto" && isFlightTracking);
   if (shouldFollow) {
-    const focus = launchAnimation.getFocusTarget();
+    const rawFocus =
+      focusMode === "vehicle"
+        ? launchAnimation.getVehicleFocusTarget()
+        : launchAnimation.getFocusTarget();
+    const focus = rawFocus.clone().multiplyScalar(partScales.scene);
     const alpha = Math.min(1, deltaTime * 5.5);
     const prevX = smoothedFocus.x;
     const prevY = smoothedFocus.y;
@@ -242,9 +417,10 @@ export function update(deltaTime) {
     sceneManager.camera.position.y += dy;
     sceneManager.camera.position.z += dz;
 
-    if (!isUserDragged() && launchAnimation.running) {
+    if (focusMode === "auto" && !isUserDragged() && launchAnimation.running) {
       const p = launchAnimation.progress ?? 0;
-      const desiredDist = p < 0.2 ? 2.4 : p < 0.58 ? 3.5 : 5.4;
+      const baseDesiredDist = p < 0.2 ? 2.4 : p < 0.58 ? 3.5 : 5.4;
+      const desiredDist = baseDesiredDist * partScales.scene * Math.max(0.75, partScales.orbit);
       const offset = sceneManager.camera.position.clone().sub(controls.target);
       const curDist = offset.length();
       if (curDist > 1e-4) {
@@ -257,10 +433,10 @@ export function update(deltaTime) {
 
   const shake = launchAnimation.getCameraShake();
   if (shake > 0.01) {
-    const focus = launchAnimation.getFocusTarget();
+    const focus = launchAnimation.getFocusTarget().clone().multiplyScalar(partScales.scene);
     controls.target.set(
-      focus.x + (Math.random() - 0.5) * shake * 0.22,
-      focus.y + (Math.random() - 0.5) * shake * 0.22,
+      focus.x + (Math.random() - 0.5) * shake * 0.22 * partScales.scene,
+      focus.y + (Math.random() - 0.5) * shake * 0.22 * partScales.scene,
       focus.z
     );
   }

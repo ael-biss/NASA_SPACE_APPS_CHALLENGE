@@ -624,6 +624,34 @@ select:focus-visible {
   gap: 16px;
 }
 
+.gi-modal-header-right {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.gi-modal-close {
+  background: rgba(5, 11, 27, 0.78);
+  color: var(--oc-starlight);
+  border: 1px solid rgba(140, 163, 191, 0.42);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.gi-modal-close:hover,
+.gi-modal-close:focus-visible {
+  border-color: var(--oc-cosmic-cyan);
+  color: var(--oc-cosmic-cyan);
+  outline: 2px solid rgba(25, 191, 255, 0.4);
+  outline-offset: 2px;
+}
+
 .gi-modal-badge {
   font-family: var(--font-ui);
   font-size: 11px;

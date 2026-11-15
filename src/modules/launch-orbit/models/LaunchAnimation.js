@@ -73,7 +73,16 @@ export class LaunchAnimation {
     this._fireballs = [];
     this._plumeSpawnAccum = 0;
     this._padStandRadius = 2.12;
+    this._padRocketHeight = 0.34;
+    this._baseStackScale = 0.22;
     this._stackScale = 0.22;
+    this._partScales = {
+      rocket: 1,
+      spacecraft: 1,
+      earth: 1,
+      orbit: 1,
+      destination: 1,
+    };
     this._countdownTotalSec = 2.4;
     this._countdownRemaining = 0;
     this._activePhaseIndex = -1;
@@ -133,8 +142,102 @@ export class LaunchAnimation {
     }
 
     this._buildVehicleStack();
+    this._applyPartScales();
     // Hold main engine plumes off until T-0 ignition
     this._setBoostPlumesVisible(false);
+  }
+
+  /**
+   * Preview the launch vehicle & spacecraft seated on the launch pad before liftoff.
+   * @param {Object} rocket
+   * @param {{ spacecraft?: Object, group: THREE.Group } | THREE.Group} spacecraftOrHandle
+   * @param {Object} orbit
+   * @param {{ fairingId?: string, siteFrame?: Object, getSiteFrame?: Function }} [options]
+   */
+  preview(rocket, spacecraftOrHandle, orbit, options = {}) {
+    this.reset();
+
+    this._rocket = rocket;
+    this._spacecraft = spacecraftOrHandle?.spacecraft ?? null;
+    this._spacecraftGroup = spacecraftOrHandle?.group ?? spacecraftOrHandle;
+    this._orbit = orbit ?? { id: "LEO", orbitRadius3D: 3.0, orbitalPeriodSec: 12 };
+    this._launchResult = options.fairingId ? { fairingId: options.fairingId } : null;
+    this._getSiteFrame = options.getSiteFrame ?? null;
+    this._siteFrame = options.siteFrame ?? this._resolveDefaultSiteFrame();
+
+    if (this._spacecraft?.setSolarDeployed) {
+      this._spacecraft.setSolarDeployed(false);
+    }
+    if (this._spacecraft?.setThrustActive) {
+      this._spacecraft.setThrustActive(false);
+    }
+
+    this._buildVehicleStack();
+    this._applyPartScales();
+    this._setBoostPlumesVisible(false);
+  }
+
+  /**
+   * Adjust visual scale multipliers for any Launch & Orbit component without changing physics.
+   * @param {{ rocket?: number, spacecraft?: number, earth?: number, orbit?: number, destination?: number }} [scales]
+   */
+  setPartScales(scales = {}) {
+    const clampScale = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0.25, Math.min(4.5, n)) : fallback;
+    };
+    this._partScales.rocket = clampScale(scales.rocket, this._partScales.rocket);
+    this._partScales.spacecraft = clampScale(scales.spacecraft, this._partScales.spacecraft);
+    this._partScales.earth = clampScale(scales.earth, this._partScales.earth);
+    this._partScales.orbit = clampScale(scales.orbit, this._partScales.orbit);
+    this._partScales.destination = clampScale(scales.destination, this._partScales.destination);
+    this._applyPartScales();
+    return { ...this._partScales };
+  }
+
+  getPartScales() {
+    return { ...this._partScales };
+  }
+
+  _applyPartScales() {
+    const frame = this._getCurrentSiteFrame();
+    const earthScale = frame.earthScale ?? this._partScales.earth;
+    this._partScales.earth = earthScale;
+    this._stackScale = this._baseStackScale * (this._stage2Separated ? 1 : this._partScales.rocket);
+    this._padStandRadius =
+      (frame.earthRadius ?? 1.8) * earthScale +
+      0.024 * earthScale +
+      (this._padRocketHeight || 0.34) * this._baseStackScale * this._partScales.rocket;
+
+    if (this._stackGroup) {
+      this._stackGroup.scale.setScalar(this._stackScale);
+    }
+
+    if (this._spacecraftGroup) {
+      if (this._stage2Separated) {
+        const deployedBase = Math.max(0.22, (this._stowedSpacecraftScale ?? 0.16) * 1.45);
+        this._spacecraftGroup.scale.setScalar(deployedBase * this._partScales.spacecraft);
+      } else {
+        const stowedBase = this._stowedSpacecraftScale ?? 0.16;
+        this._spacecraftGroup.scale.setScalar(
+          (stowedBase * this._partScales.spacecraft) / Math.max(0.1, this._partScales.rocket)
+        );
+      }
+    }
+
+    if (this._stackGroup && !this.running && !this._orbiting) {
+      this._stackGroup.position.copy(frame.up).multiplyScalar(this._padStandRadius);
+      this._alignVehicleToAxes(frame.up, frame.heading);
+      this._focusTarget.copy(this._stackGroup.position);
+    } else if (this._orbiting) {
+      this._updateContinuousOrbit(0);
+    } else if (this.running && this._countdownRemaining > 0 && this._stackGroup) {
+      this._positionVehicleAlongTrajectory(0, 0);
+    }
+  }
+
+  getVehicleFocusTarget() {
+    return this._stackGroup ? this._stackGroup.position.clone() : this._focusTarget.clone();
   }
 
   setSpeed(multiplier) {
@@ -602,9 +705,14 @@ export class LaunchAnimation {
 
     const frame = this._getCurrentSiteFrame();
     const nozzleHeight = (clusterSpec.nozzleRadius ?? 0.024) * 2.6;
-    this._stackScale = 0.22;
+    const earthScale = frame.earthScale ?? this._partScales.earth;
+    this._partScales.earth = earthScale;
+    this._padRocketHeight = s1Height + nozzleHeight * 0.72;
+    this._stackScale = this._baseStackScale * this._partScales.rocket;
     this._padStandRadius =
-      (frame.earthRadius ?? 1.8) + 0.024 + (s1Height + nozzleHeight * 0.72) * this._stackScale;
+      (frame.earthRadius ?? 1.8) * earthScale +
+      0.024 * earthScale +
+      this._padRocketHeight * this._stackScale;
     this._stackGroup.scale.setScalar(this._stackScale);
     this._stackGroup.position.copy(frame.up).multiplyScalar(this._padStandRadius);
     this._alignVehicleToAxes(frame.up, frame.heading);
@@ -1035,9 +1143,10 @@ export class LaunchAnimation {
     if (this._spacecraftGroup && this._stackGroup && this._stage2Group.children.includes(this._spacecraftGroup)) {
       this._stage2Group.remove(this._spacecraftGroup);
       this._spacecraftGroup.position.set(0, 0.15, 0);
-      this._spacecraftGroup.scale.setScalar(Math.max(0.22, (this._stowedSpacecraftScale ?? 0.16) * 1.45));
       this._stackGroup.add(this._spacecraftGroup);
     }
+    this._stage2Separated = true;
+    this._applyPartScales();
 
     const { right, up } = this._getVehicleAxes();
     const stageOrigin = new THREE.Vector3();
@@ -1100,14 +1209,17 @@ export class LaunchAnimation {
 
     const frame = this._getCurrentSiteFrame();
     const { up: u0, heading } = frame;
-    const padStandRadius = this._padStandRadius ?? (frame.earthRadius ?? 1.8) + 0.34;
-    const leoRadius = 3.0;
+    const orbitScale = frame.orbitScale ?? this._partScales.orbit;
+    this._partScales.orbit = orbitScale;
+    const padStandRadius = this._padStandRadius ?? (frame.earthRadius ?? 1.8) * (frame.earthScale ?? this._partScales.earth) + 0.34;
+    const baseLeoRadius = 3.0;
+    const leoRadius = baseLeoRadius * orbitScale;
     const deployAngle = 0.72;
 
     const leoDeparture = u0
       .clone()
-      .multiplyScalar(Math.cos(deployAngle) * leoRadius)
-      .addScaledVector(heading, Math.sin(deployAngle) * leoRadius);
+      .multiplyScalar(Math.cos(deployAngle) * baseLeoRadius)
+      .addScaledVector(heading, Math.sin(deployAngle) * baseLeoRadius);
     const leoDepartureDir = u0
       .clone()
       .multiplyScalar(-Math.sin(deployAngle))
@@ -1164,8 +1276,8 @@ export class LaunchAnimation {
       const t = Math.max(0, Math.min(1, (progress - 0.58) / 0.42));
       const curve = PlanetScene.computeTransferCurve(this._orbit, leoDeparture, leoDepartureDir);
       if (curve) {
-        const pos = curve.getPoint(t);
-        const nextPos = curve.getPoint(Math.min(1, t + 0.02));
+        const pos = curve.getPoint(t).multiplyScalar(orbitScale);
+        const nextPos = curve.getPoint(Math.min(1, t + 0.02)).multiplyScalar(orbitScale);
         this._stackGroup.position.copy(pos);
         const travelDir = nextPos.clone().sub(pos);
         if (travelDir.lengthSq() > 1e-6) {
@@ -1195,22 +1307,24 @@ export class LaunchAnimation {
 
   _updateContinuousOrbit(dt) {
     if (!this._stackGroup) return;
+    const frame = this._getCurrentSiteFrame();
+    const orbitScale = frame.orbitScale ?? this._partScales.orbit;
+    const destScale = frame.destinationScale ?? this._partScales.destination;
     const period = this._orbit?.orbitalPeriodSec ?? 14;
     this._orbitAngle += (dt / period) * Math.PI * 2;
 
     if (this._orbit?.id === "LUNAR" || this._orbit?.id === "MARS") {
-      const centerX = this._orbit.orbitRadius3D;
-      const localR = this._orbit.id === "MARS" ? 1.6 : 1.37;
+      const centerX = this._orbit.orbitRadius3D * orbitScale;
+      const localR = (this._orbit.id === "MARS" ? 1.6 : 1.37) * destScale;
       this._stackGroup.position.set(
-        centerX + Math.cos(this._orbitAngle) * 0.25,
+        centerX + Math.cos(this._orbitAngle) * 0.25 * destScale,
         Math.sin(this._orbitAngle) * localR,
         Math.cos(this._orbitAngle) * localR
       );
       this._focusTarget.set(centerX, 0, 0);
       this._stackGroup.rotation.y += dt * 0.6;
     } else if (this._orbit?.id === "LEO") {
-      const frame = this._getCurrentSiteFrame();
-      const leoRadius = 3.0;
+      const leoRadius = 3.0 * orbitScale;
       const radial = frame.up
         .clone()
         .multiplyScalar(Math.cos(this._orbitAngle))
@@ -1225,7 +1339,7 @@ export class LaunchAnimation {
       this._alignVehicleToAxes(tangent, radial);
       this._focusTarget.set(0, 0, 0);
     } else {
-      const r = this._orbit?.orbitRadius3D ?? 3.0;
+      const r = (this._orbit?.orbitRadius3D ?? 3.0) * orbitScale;
       const inclRad = ((this._orbit?.inclinationDeg ?? 0) * Math.PI) / 180;
       const localPos = new THREE.Vector3(
         Math.cos(this._orbitAngle) * r,

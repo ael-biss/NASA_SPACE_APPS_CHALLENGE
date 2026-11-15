@@ -12,14 +12,17 @@ export class PlanetScene {
   constructor() {
     this.group = new THREE.Group();
     this.group.name = "planet-scene-root";
+    this._earthGroup = null;
     this._earthMesh = null;
     this._padGroup = null;
+    this._destGroup = null;
     this._destMesh = null;
     this._orbitGroup = null;
     this._earthRadius = 1.8;
     this._destPosition = new THREE.Vector3();
     this._textures = [];
     this._launchSite = getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID);
+    this._scales = { earth: 1, destination: 1, orbit: 1 };
   }
 
   /**
@@ -78,6 +81,10 @@ export class PlanetScene {
     return {
       site,
       earthRadius: this._earthRadius,
+      scaledEarthRadius: this._earthRadius * this._scales.earth,
+      earthScale: this._scales.earth,
+      orbitScale: this._scales.orbit,
+      destinationScale: this._scales.destination,
       earthRotY,
       surfacePos,
       up,
@@ -125,12 +132,15 @@ export class PlanetScene {
       roughness: 0.72,
       metalness: 0.06,
     });
+    this._earthGroup = new THREE.Group();
+    this._earthGroup.name = "earth-body-group";
+
     this._earthMesh = new THREE.Mesh(
       new THREE.SphereGeometry(this._earthRadius, 64, 48),
       earthMat
     );
     this._earthMesh.name = "earth-sphere";
-    this.group.add(this._earthMesh);
+    this._earthGroup.add(this._earthMesh);
 
     if (typeof Image !== "undefined") {
       const loader = new THREE.TextureLoader();
@@ -167,10 +177,12 @@ export class PlanetScene {
         side: THREE.BackSide,
       })
     );
-    this.group.add(atmo);
+    this._earthGroup.add(atmo);
+    this.group.add(this._earthGroup);
 
     this.group.add(this._createStarfield());
     this.orientToSite(this._launchSite);
+    this._applyPartScales();
     return this.group;
   }
 
@@ -326,6 +338,8 @@ export class PlanetScene {
         Math.PI * 0.48
       );
       destGroup.add(captureRing);
+      destGroup.name = "destination-body-group";
+      this._destGroup = destGroup;
       orbitGroup.add(destGroup);
 
       // Clean loop-free transfer trajectory arc
@@ -359,23 +373,68 @@ export class PlanetScene {
         this._addNotToScaleBadge(orbitGroup, mid.clone().add(new THREE.Vector3(0, 0.38, 0)));
       }
       this._destPosition.set(0, 0, 0);
+      this._destGroup = null;
       this._destMesh = null;
     } else {
       this._destPosition.set(0, 0, 0);
+      this._destGroup = null;
       this._destMesh = null;
     }
 
     this._orbitGroup = orbitGroup;
     this.group.add(orbitGroup);
+    this._applyPartScales();
     return orbitGroup;
+  }
+
+  /**
+   * Update visual scales for individual Launch & Orbit scene components without affecting physics.
+   * @param {{ earth?: number, destination?: number, orbit?: number }} [scales]
+   */
+  setPartScales(scales = {}) {
+    const clampScale = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(0.25, Math.min(4.5, n)) : fallback;
+    };
+    this._scales.earth = clampScale(scales.earth, this._scales.earth);
+    this._scales.destination = clampScale(scales.destination, this._scales.destination);
+    this._scales.orbit = clampScale(scales.orbit, this._scales.orbit);
+    this._applyPartScales();
+    return { ...this._scales };
+  }
+
+  getPartScales() {
+    return { ...this._scales };
+  }
+
+  _applyPartScales() {
+    if (this._earthGroup) {
+      this._earthGroup.scale.setScalar(this._scales.earth);
+    }
+    if (this._orbitGroup) {
+      this._orbitGroup.scale.setScalar(this._scales.orbit);
+    }
+    if (this._destGroup) {
+      this._destGroup.scale.setScalar(
+        this._scales.destination / Math.max(0.05, this._scales.orbit)
+      );
+    }
   }
 
   getEarthRadius() {
     return this._earthRadius;
   }
 
+  getScaledEarthRadius() {
+    return this._earthRadius * this._scales.earth;
+  }
+
   getDestinationPosition() {
     return this._destPosition.clone();
+  }
+
+  getScaledDestinationPosition() {
+    return this._destPosition.clone().multiplyScalar(this._scales.orbit);
   }
 
   /**
@@ -405,8 +464,10 @@ export class PlanetScene {
       tex.dispose();
     }
     this._textures = [];
+    this._earthGroup = null;
     this._earthMesh = null;
     this._padGroup = null;
+    this._destGroup = null;
     this._destMesh = null;
     this._orbitGroup = null;
   }

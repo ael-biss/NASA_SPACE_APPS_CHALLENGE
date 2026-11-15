@@ -836,3 +836,55 @@ test("LaunchAnimation Phase 3: pad grounding, countdown, plume particles, Stage 
   assert.equal(anim._debris.length, 0);
   planetScene.dispose();
 });
+
+test("PlanetScene & LaunchAnimation scale Earth, rocket, spacecraft, orbit, and destination independently", () => {
+  const planetScene = new PlanetScene();
+  const launchSite = getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID);
+  planetScene.buildEarth(launchSite);
+  const lunarOrbit = getOrbitById("LUNAR");
+  planetScene.buildOrbitRing(lunarOrbit, launchSite, 90);
+
+  planetScene.setPartScales({ earth: 1.5, destination: 2.0, orbit: 1.25 });
+  assert.ok(Math.abs(planetScene.getScaledEarthRadius() - 1.8 * 1.5) < 1e-6);
+  assert.ok(Math.abs(planetScene._earthGroup.scale.x - 1.5) < 1e-6);
+  assert.ok(Math.abs(planetScene._orbitGroup.scale.x - 1.25) < 1e-6);
+  // Destination group compensates for orbit group scale so apparent planet size matches 2.0x
+  const effectiveDestScale = planetScene._destGroup.scale.x * planetScene._orbitGroup.scale.x;
+  assert.ok(Math.abs(effectiveDestScale - 2.0) < 1e-6);
+  assert.ok(Math.abs(planetScene.getScaledDestinationPosition().x - lunarOrbit.orbitRadius3D * 1.25) < 1e-6);
+
+  // Clamps out-of-range inputs safely
+  const clamped = planetScene.setPartScales({ earth: 99, orbit: 0.01 });
+  assert.equal(clamped.earth, 4.5);
+  assert.equal(clamped.orbit, 0.25);
+
+  planetScene.setPartScales({ earth: 1.4, destination: 1.8, orbit: 1.2 });
+  const siteFrame = planetScene.getLaunchSiteFrame(launchSite, 90);
+
+  const scGroup = new THREE.Group();
+  scGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.55, 0.45), new THREE.MeshStandardMaterial()));
+  const heavyRocket = getRocketById("heavy-lift");
+
+  const anim = new LaunchAnimation();
+  anim.setPartScales({ rocket: 1.6, spacecraft: 2.2, earth: 1.4, orbit: 1.2, destination: 1.8 });
+  anim.preview(heavyRocket, { group: scGroup }, lunarOrbit, {
+    fairingId: "standard-fairing",
+    siteFrame,
+    getSiteFrame: () => planetScene.getLaunchSiteFrame(launchSite, 90),
+  });
+
+  assert.equal(anim.running, false);
+  const stack = anim.getGroup().getObjectByName("launch-vehicle-stack");
+  assert.ok(stack, "preview builds launch vehicle stack on pad");
+  assert.ok(Math.abs(stack.scale.x - 0.22 * 1.6) < 1e-6);
+  assert.ok(stack.position.length() > planetScene.getScaledEarthRadius(), "scaled rocket remains seated above scaled Earth");
+
+  // Switching scales live while previewing keeps rocket anchored to updated Earth + rocket scale
+  planetScene.setPartScales({ earth: 0.8 });
+  anim.setPartScales({ earth: 0.8, rocket: 0.9 });
+  assert.ok(Math.abs(stack.scale.x - 0.22 * 0.9) < 1e-6);
+  assert.ok(stack.position.length() > 1.8 * 0.8);
+
+  anim.reset();
+  planetScene.dispose();
+});

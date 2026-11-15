@@ -141,6 +141,32 @@ test("Spacecraft.assemble renders chosen 3D instruments, antenna type, shielding
   craft.dispose();
 });
 
+test("All 10 instruments mount synchronously facing outward away from the spacecraft bus", async () => {
+  const { getInstruments } = await import("../../mission-science/data/instruments.js");
+  const allInstruments = getInstruments();
+  assert.equal(allInstruments.length, 10);
+
+  const craft = new Spacecraft();
+  const group = craft.assemble(DEFAULT_SELECTION, allInstruments);
+  const payloadGroup = group.getObjectByName("payload-instruments");
+  assert.ok(payloadGroup);
+
+  for (const inst of allInstruments) {
+    const mount = payloadGroup.getObjectByName(`instrument:${inst.id}`);
+    assert.ok(mount, `expected synchronous mount for ${inst.id}`);
+    mount.updateMatrixWorld(true);
+    // Outward mount Z axis must point away from bus center (dot(mountPos, mountForwardZ) > 0)
+    const forwardZ = new THREE.Vector3(0, 0, 1).applyQuaternion(mount.quaternion);
+    const radialOut = new THREE.Vector3(mount.position.x, 0, mount.position.z).normalize();
+    assert.ok(
+      forwardZ.dot(radialOut) > 0.5,
+      `${inst.id} sensor Z must point outward away from spacecraft bus`
+    );
+  }
+
+  craft.dispose();
+});
+
 test("computeCheapestAutoFix resolves errors & warnings at lowest cost delta", () => {
   const lunarMission = {
     missionId: "MISSION_LUNAR_ORBIT",

@@ -20,8 +20,14 @@ export class LaunchControlPanel {
    * @param {import('../../../core/GameState.js').GameState} gameState
    * @param {{
    *   onSelectRocket?: (rocketId: string) => void,
+   *   onSelectFairing?: (fairingId: string) => void,
    *   onLaunch: (rocketId: string, orbitId: string, fairingId: string) => void,
    *   onSpeedChange?: (speed: number) => void,
+   *   onZoom?: (factor: number) => void,
+   *   onResetView?: () => void,
+   *   onFocusMode?: (mode: "auto" | "vehicle" | "earth" | "orbit") => void,
+   *   onPartScaleChange?: (scales: Object) => void,
+   *   onResetPartScales?: () => void,
    *   onViewResults?: () => void,
    *   onReplay?: () => void,
    * }} handlersOrCallback
@@ -45,7 +51,25 @@ export class LaunchControlPanel {
     this._lastResult = null;
     this._lastTelemetry = null;
     this._activePhaseIndex = -1;
+    this._scaleDrawerOpen = false;
+    this._focusMode = "auto";
+    this._partScales = {
+      scene: 1,
+      rocket: 1,
+      spacecraft: 1,
+      earth: 1,
+      destination: 1,
+      orbit: 1,
+    };
     this._root = null;
+  }
+
+  getSelectedRocketId() {
+    return this._selectedRocketId;
+  }
+
+  getSelectedFairingId() {
+    return this._selectedFairingId;
   }
 
   /** Render rocket selector, fairing selector, target orbit summary, and Launch button. */
@@ -84,6 +108,7 @@ export class LaunchControlPanel {
         this._lastResult = null;
         this._lastTelemetry = null;
         this._syncPendingLaunchCost();
+        this.handlers.onSelectFairing?.(this._selectedFairingId);
         this.render();
         return;
       }
@@ -106,6 +131,34 @@ export class LaunchControlPanel {
         this._speed = this._speed === 1 ? 10 : this._speed === 10 ? 100 : 1;
         this.handlers.onSpeedChange?.(this._speed);
         this.render();
+      } else if (action === "zoom-in") {
+        this.handlers.onZoom?.(0.72);
+      } else if (action === "zoom-out") {
+        this.handlers.onZoom?.(1.38);
+      } else if (action === "reset-view") {
+        this._focusMode = "auto";
+        this.handlers.onResetView?.();
+        this.render();
+      } else if (action === "focus-mode") {
+        const nextMode = btn.dataset.focus || "auto";
+        this._focusMode = nextMode;
+        this.handlers.onFocusMode?.(nextMode);
+        this.render();
+      } else if (action === "toggle-scale-drawer") {
+        this._scaleDrawerOpen = !this._scaleDrawerOpen;
+        this.render();
+      } else if (action === "reset-scales") {
+        this._partScales = {
+          scene: 1,
+          rocket: 1,
+          spacecraft: 1,
+          earth: 1,
+          destination: 1,
+          orbit: 1,
+        };
+        this.handlers.onResetPartScales?.();
+        this.handlers.onPartScaleChange?.({ ...this._partScales });
+        this.render();
       } else if (action === "view-results") {
         this.handlers.onViewResults?.();
       } else if (action === "replay") {
@@ -114,6 +167,24 @@ export class LaunchControlPanel {
         this._activePhaseIndex = 0;
         this.handlers.onReplay?.();
       }
+    });
+
+    this._root.addEventListener("input", (e) => {
+      const slider = e.target.closest("input[data-scale-part]");
+      if (!slider) return;
+      const key = slider.dataset.scalePart;
+      const val = Math.max(0.25, Math.min(4.5, Number(slider.value) || 1));
+      this._partScales[key] = val;
+      const label = this._root.querySelector(`[data-scale-val="${key}"]`);
+      if (label) {
+        label.textContent = `${val.toFixed(2)}×`;
+      }
+      const badge = this._root.querySelector("[data-role='scale-custom-badge']");
+      const hasCustom = Object.values(this._partScales).some((v) => Math.abs(v - 1) > 0.01);
+      if (badge) {
+        badge.hidden = !hasCustom;
+      }
+      this.handlers.onPartScaleChange?.({ ...this._partScales });
     });
 
     this._syncPendingLaunchCost();
@@ -475,7 +546,8 @@ export class LaunchControlPanel {
         <span class="lo-cd-label">TERMINAL COUNT</span>
         <strong>T-${this._lastTelemetry?.countdownSec ?? 3}</strong>
       </div>
-      <div class="lo-scale-note">Orbit &amp; body sizes not to scale</div>
+
+      ${this._renderViewportDockHtml(orbit)}
 
       ${
         showTimeline
@@ -536,6 +608,91 @@ export class LaunchControlPanel {
       `
           : ""
       }
+    `;
+  }
+
+  _renderViewportDockHtml(orbit) {
+    const hasDestination = orbit?.id === "LUNAR" || orbit?.id === "MARS";
+    const destLabel = orbit?.id === "MARS" ? "Mars Body" : "Moon Body";
+    const hasCustomScale = Object.values(this._partScales).some((v) => Math.abs(v - 1) > 0.01);
+
+    const sliderDefs = [
+      { key: "scene", label: "All / Scene", min: 0.3, max: 3.0 },
+      { key: "rocket", label: "Rocket Stack", min: 0.3, max: 3.5 },
+      { key: "spacecraft", label: "Spacecraft", min: 0.3, max: 4.0 },
+      { key: "earth", label: "Earth & Pad", min: 0.4, max: 2.5 },
+      ...(hasDestination ? [{ key: "destination", label: destLabel, min: 0.4, max: 3.5 }] : []),
+      { key: "orbit", label: "Orbit & Arc", min: 0.4, max: 2.5 },
+    ];
+
+    const slidersHtml = sliderDefs
+      .map((item) => {
+        const val = this._partScales[item.key] ?? 1;
+        return `
+          <label class="lo-scale-row">
+            <span class="lo-scale-name">${this._escape(item.label)}</span>
+            <input
+              type="range"
+              min="${item.min}"
+              max="${item.max}"
+              step="0.05"
+              value="${val}"
+              data-scale-part="${item.key}"
+              aria-label="${this._escape(item.label)} scale"
+            />
+            <span class="lo-scale-val" data-scale-val="${item.key}">${val.toFixed(2)}×</span>
+          </label>
+        `;
+      })
+      .join("");
+
+    const focusOptions = [
+      { id: "auto", label: "Auto" },
+      { id: "vehicle", label: "Craft" },
+      { id: "earth", label: "Earth" },
+      { id: "orbit", label: "System" },
+    ];
+
+    return `
+      <div class="lo-viewport-dock" data-tour="launch-viewport-scale">
+        ${
+          this._scaleDrawerOpen
+            ? `
+          <div class="lo-scale-drawer" role="region" aria-label="Scale scene parts">
+            <div class="lo-scale-drawer-head">
+              <strong>Scale Scene Parts</strong>
+              <button type="button" class="lo-mini-btn" data-action="reset-scales">Reset 1.00×</button>
+            </div>
+            <div class="lo-scale-sliders">${slidersHtml}</div>
+          </div>
+        `
+            : ""
+        }
+        <div class="lo-viewport-bar">
+          <div class="lo-vp-group" role="group" aria-label="Camera zoom">
+            <button type="button" class="lo-mini-btn" data-action="zoom-in" title="Zoom in">+</button>
+            <button type="button" class="lo-mini-btn" data-action="zoom-out" title="Zoom out">−</button>
+            <button type="button" class="lo-mini-btn" data-action="reset-view" title="Reset camera">Reset</button>
+          </div>
+          <div class="lo-vp-group" role="group" aria-label="Camera target">
+            ${focusOptions
+              .map(
+                (opt) =>
+                  `<button type="button" class="lo-mini-btn ${this._focusMode === opt.id ? "active" : ""}" data-action="focus-mode" data-focus="${opt.id}">${opt.label}</button>`
+              )
+              .join("")}
+          </div>
+          <button
+            type="button"
+            class="lo-mini-btn lo-scale-toggle ${this._scaleDrawerOpen ? "active" : ""}"
+            data-action="toggle-scale-drawer"
+            aria-expanded="${this._scaleDrawerOpen ? "true" : "false"}"
+          >
+            ⤢ Scale Parts <span class="lo-custom-dot" data-role="scale-custom-badge" ${hasCustomScale ? "" : "hidden"}>●</span>
+          </button>
+        </div>
+        <div class="lo-scale-note">Drag to rotate · Right-drag pan · Scroll zoom · Schematic scale</div>
+      </div>
     `;
   }
 
@@ -973,6 +1130,128 @@ export class LaunchControlPanel {
         gap: 2px;
       }
       .lo-prelaunch-warn strong { color: var(--oc-starlight, #EAF4FF); }
+      .lo-viewport-dock {
+        pointer-events: auto;
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        z-index: 22;
+        max-width: calc(100vw - 24px);
+      }
+      .lo-scale-drawer {
+        width: min(360px, 92vw);
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(10, 20, 40, 0.94);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(25, 191, 255, 0.42);
+        box-shadow: 0 14px 36px rgba(5, 11, 27, 0.65);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .lo-scale-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--oc-cosmic-cyan, #19BFFF);
+      }
+      .lo-scale-sliders {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .lo-scale-row {
+        display: grid;
+        grid-template-columns: 92px 1fr 44px;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--oc-starlight, #EAF4FF);
+      }
+      .lo-scale-name {
+        color: var(--oc-nebula-gray, #8CA3BF);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .lo-scale-row input[type="range"] {
+        width: 100%;
+        accent-color: var(--oc-cosmic-cyan, #19BFFF);
+        cursor: pointer;
+      }
+      .lo-scale-val {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        color: var(--oc-starlight, #EAF4FF);
+      }
+      .lo-viewport-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: rgba(16, 29, 51, 0.88);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(25, 191, 255, 0.34);
+        box-shadow: 0 10px 26px rgba(5, 11, 27, 0.48);
+      }
+      .lo-vp-group {
+        display: inline-flex;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid rgba(140, 163, 191, 0.25);
+      }
+      .lo-mini-btn {
+        background: rgba(5, 11, 27, 0.72);
+        color: var(--oc-starlight, #EAF4FF);
+        border: 1px solid rgba(140, 163, 191, 0.24);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-family: var(--font-ui, "Rajdhani", sans-serif);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .lo-vp-group .lo-mini-btn {
+        border: none;
+        border-right: 1px solid rgba(140, 163, 191, 0.2);
+        border-radius: 0;
+      }
+      .lo-vp-group .lo-mini-btn:last-child { border-right: none; }
+      .lo-mini-btn:hover {
+        border-color: rgba(25, 191, 255, 0.65);
+        background: rgba(25, 191, 255, 0.14);
+      }
+      .lo-mini-btn.active {
+        background: rgba(25, 191, 255, 0.26);
+        color: var(--oc-cosmic-cyan, #19BFFF);
+        border-color: var(--oc-cosmic-cyan, #19BFFF);
+      }
+      .lo-custom-dot { color: var(--oc-stellar-gold, #FF9D24); margin-left: 2px; }
+      .lo-custom-dot[hidden] { display: none; }
+      .lo-viewport-dock .lo-scale-note {
+        position: static;
+        transform: none;
+      }
+      @media (max-width: 900px) {
+        .lo-viewport-dock .lo-scale-note { display: none; }
+        .lo-viewport-bar { padding: 4px 6px; gap: 4px; }
+        .lo-mini-btn { padding: 3px 6px; font-size: 11px; }
+      }
     `;
     document.head.appendChild(style);
   }

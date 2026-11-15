@@ -11,13 +11,27 @@ import * as THREE from "three";
 import { AssetLoader } from "../../../shared/utils/AssetLoader.js";
 import { getInstrumentById } from "../../mission-science/data/instruments.js";
 import {
+  createInfraredSpectrometerModel,
   createLaserAltimeterModel,
+  createMagnetometerModel,
+  createMassSpectrometerModel,
+  createOpticalCameraModel,
   createParticleDetectorModel,
+  createRadarSounderModel,
   createSeismometerModel,
+  createThermalImagerModel,
+  createUvSpectrometerModel,
 } from "../../mission-science/models/proceduralInstruments.js";
 
 const PROCEDURAL_BUILDERS = {
+  "procedural:optical-camera": createOpticalCameraModel,
+  "procedural:infrared-spectrometer": createInfraredSpectrometerModel,
+  "procedural:radar-sounder": createRadarSounderModel,
+  "procedural:magnetometer": createMagnetometerModel,
+  "procedural:mass-spectrometer": createMassSpectrometerModel,
   "procedural:laser-altimeter": createLaserAltimeterModel,
+  "procedural:uv-spectrometer": createUvSpectrometerModel,
+  "procedural:thermal-imager": createThermalImagerModel,
   "procedural:particle-detector": createParticleDetectorModel,
   "procedural:seismometer": createSeismometerModel,
 };
@@ -60,8 +74,8 @@ export class InstrumentPayload {
       attachmentPoints.busHeight || 1.25,
       attachmentPoints.busDepth || attachmentPoints.busWidth || 1.15
     );
-    const targetSize = Math.min(0.4, Math.max(0.16, busMinDim * 0.25));
-    const standoff = Math.max(0.09, busMinDim * 0.11);
+    const targetSize = Math.min(0.42, Math.max(0.18, busMinDim * 0.28));
+    const standoff = Math.max(0.055, busMinDim * 0.068);
 
     const materials = this._createMountMaterials();
 
@@ -290,7 +304,9 @@ export class InstrumentPayload {
 
     // Magnetometers sit on an extended boom to isolate them from bus magnetic interference
     const isBoom = instrument.id === "INS_MAG_01";
-    const effectiveStandoff = isBoom ? standoff * 1.45 : standoff;
+    const effectiveStandoff = isBoom ? standoff * 1.85 : standoff;
+    const effectiveTargetSize = isBoom ? targetSize * 1.35 : targetSize;
+    const modelScale = maxDim > 0 ? effectiveTargetSize / maxDim : 1;
 
     const mountGroup = new THREE.Group();
     mountGroup.name = `instrument:${instrument.id}`;
@@ -323,13 +339,13 @@ export class InstrumentPayload {
       materials
     );
 
-    // Seat the instrument solidly into the adapter cradle with slight elastomer overlap
+    // Lock the instrument's rear (-Z) mounting face flush onto the adapter cradle so all sensors aim +Z outward
     const adapterFrontZ = effectiveStandoff + 0.008;
     const pivot = new THREE.Group();
-    rawModel.position.sub(center);
+    rawModel.position.set(-center.x, -center.y, -box.min.z);
     pivot.add(rawModel);
-    pivot.scale.setScalar(scale);
-    pivot.position.z = adapterFrontZ + (size.z * scale) * 0.5 - 0.006;
+    pivot.scale.setScalar(modelScale);
+    pivot.position.z = adapterFrontZ - 0.003;
     mountGroup.add(pivot);
 
     return mountGroup;

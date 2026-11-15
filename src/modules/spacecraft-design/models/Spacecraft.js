@@ -252,13 +252,14 @@ export class Spacecraft {
         roughness: 0.3,
       });
 
-      const plateThickness = isTantalum ? 0.09 : 0.055;
+      const plateThickness = isTantalum ? 0.065 : 0.045;
+      const halfD = (anchors.busDepth ?? anchors.busWidth ?? 1.15) / 2;
       [-1, 1].forEach((zSign) => {
         const plate = new THREE.Mesh(
-          new THREE.BoxGeometry(halfW * 1.18, halfH * 0.62, plateThickness),
+          new THREE.BoxGeometry(halfW * 0.72, halfH * 0.38, plateThickness),
           shieldMat
         );
-        plate.position.set(0, -halfH * 0.12, zSign * (halfW * 0.98));
+        plate.position.set(0, -halfH * 0.32, zSign * (halfD + 0.015));
         shieldGroup.add(plate);
       });
 

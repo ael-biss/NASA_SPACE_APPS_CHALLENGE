@@ -96,6 +96,13 @@ export class GameFlowController {
             this.gameState.reset();
             this.setPhase("mission");
           },
+          onClose: () => {
+            this._resultsModal.hide();
+            if (this.gameState.phase === "results") {
+              this.gameState.setPhase("launch");
+              this.onPhaseChanged?.("launch");
+            }
+          },
         },
         {
           mission: this.gameState.mission,

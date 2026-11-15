@@ -363,21 +363,22 @@ export class Structure {
    * @returns {Array<{ position: THREE.Vector3, normal: THREE.Vector3 }>}
    */
   _buildPayloadSlots(shape, halfW, halfH, halfD) {
-    const upperY = halfH * 0.34;
+    const upperY = halfH * 0.36;
     const lowerY = -halfH * 0.34;
+    const armorThick = 0.032;
 
     if (shape === "box") {
-      const zFront = halfD;
-      const flankX = halfW * 0.58;
+      const zFront = halfD + armorThick;
+      const flankX = halfW * 0.44;
       const specs = [
-        { pos: [0, lowerY, zFront], norm: [0, 0, 1] },
         { pos: [flankX, upperY, zFront], norm: [0, 0, 1] },
         { pos: [-flankX, upperY, zFront], norm: [0, 0, 1] },
-        { pos: [0, upperY, -zFront], norm: [0, 0, -1] },
-        { pos: [flankX, upperY, -zFront], norm: [0, 0, -1] },
-        { pos: [-flankX, upperY, -zFront], norm: [0, 0, -1] },
         { pos: [flankX, lowerY, zFront], norm: [0, 0, 1] },
         { pos: [-flankX, lowerY, zFront], norm: [0, 0, 1] },
+        { pos: [flankX, upperY, -zFront], norm: [0, 0, -1] },
+        { pos: [-flankX, upperY, -zFront], norm: [0, 0, -1] },
+        { pos: [flankX, lowerY, -zFront], norm: [0, 0, -1] },
+        { pos: [-flankX, lowerY, -zFront], norm: [0, 0, -1] },
       ];
       return specs.map(({ pos, norm }) => ({
         position: new THREE.Vector3(...pos),
@@ -385,22 +386,22 @@ export class Structure {
       }));
     }
 
-    // Align hex (30 deg) and oct (22.5 deg) slots flush on the flat facets using the exact apothem
+    // Align hex (30 deg) and oct (22.5 deg) slots flush outside the outer hull armor along radial normals
     const sides = shape === "hex" ? 6 : 8;
     const facetAngle = Math.PI / sides;
-    const apothem = halfW * Math.cos(facetAngle);
+    const faceR = halfW * Math.cos(facetAngle) + armorThick;
     const sinA = Math.sin(facetAngle);
     const cosA = Math.cos(facetAngle);
 
     const specs = [
-      { pos: [apothem * sinA, lowerY, apothem * cosA], norm: [sinA, 0, cosA] },
-      { pos: [-apothem * sinA, lowerY, apothem * cosA], norm: [-sinA, 0, cosA] },
-      { pos: [apothem * sinA, upperY, apothem * cosA], norm: [sinA, 0, cosA] },
-      { pos: [-apothem * sinA, upperY, apothem * cosA], norm: [-sinA, 0, cosA] },
-      { pos: [apothem * sinA, upperY, -apothem * cosA], norm: [sinA, 0, -cosA] },
-      { pos: [-apothem * sinA, upperY, -apothem * cosA], norm: [-sinA, 0, -cosA] },
-      { pos: [apothem * sinA, lowerY, -apothem * cosA], norm: [sinA, 0, -cosA] },
-      { pos: [-apothem * sinA, lowerY, -apothem * cosA], norm: [-sinA, 0, -cosA] },
+      { pos: [faceR * sinA, upperY, faceR * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-faceR * sinA, upperY, faceR * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [faceR * sinA, lowerY, faceR * cosA], norm: [sinA, 0, cosA] },
+      { pos: [-faceR * sinA, lowerY, faceR * cosA], norm: [-sinA, 0, cosA] },
+      { pos: [faceR * sinA, upperY, -faceR * cosA], norm: [sinA, 0, -cosA] },
+      { pos: [-faceR * sinA, upperY, -faceR * cosA], norm: [-sinA, 0, -cosA] },
+      { pos: [faceR * sinA, lowerY, -faceR * cosA], norm: [sinA, 0, -cosA] },
+      { pos: [-faceR * sinA, lowerY, -faceR * cosA], norm: [-sinA, 0, -cosA] },
     ];
 
     return specs.map(({ pos, norm }) => ({

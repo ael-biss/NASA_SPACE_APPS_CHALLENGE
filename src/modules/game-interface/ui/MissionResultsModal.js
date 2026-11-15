@@ -24,6 +24,7 @@ export class MissionResultsModal {
   /** @param {HTMLElement} container */
   constructor(container) {
     this.container = container;
+    this._escHandler = null;
   }
 
   /**
@@ -254,9 +255,12 @@ export class MissionResultsModal {
               <h2>${headline}</h2>
               <p class="gi-modal-sub">${this._esc(evaluationResult.summary)}</p>
             </div>
-            <div class="gi-grade-box ${passed ? "gi-grade-pass" : "gi-grade-fail"}">
-              <span class="gi-grade">${this._esc(evaluationResult.grade)}</span>
-              <small>${evaluationResult.score}/100</small>
+            <div class="gi-modal-header-right">
+              <div class="gi-grade-box ${passed ? "gi-grade-pass" : "gi-grade-fail"}">
+                <span class="gi-grade">${this._esc(evaluationResult.grade)}</span>
+                <small>${evaluationResult.score}/100</small>
+              </div>
+              <button type="button" class="gi-modal-close" data-modal-action="close" aria-label="Close report" title="Close report (Esc)">✕</button>
             </div>
           </header>
 
@@ -320,10 +324,39 @@ export class MissionResultsModal {
             <button type="button" class="gi-btn gi-btn-primary" data-modal-action="modify">Retry with Fixes</button>
             <button type="button" class="gi-btn" data-modal-action="replay">Change Rocket / Replay</button>
             <button type="button" class="gi-btn" data-modal-action="new">New Mission</button>
+            <button type="button" class="gi-btn" data-modal-action="close">Close</button>
           </footer>
         </article>
       </div>
     `;
+
+    const handleClose = () => {
+      if (actions?.onClose) {
+        actions.onClose();
+      } else {
+        this.hide();
+      }
+    };
+
+    const closeBtns =
+      typeof this.container.querySelectorAll === "function"
+        ? this.container.querySelectorAll('[data-modal-action="close"]')
+        : [this.container.querySelector('[data-modal-action="close"]')].filter(Boolean);
+    closeBtns.forEach((btn) => btn.addEventListener("click", handleClose));
+
+    this.container.querySelector(".gi-modal-backdrop")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) handleClose();
+    });
+
+    if (typeof window !== "undefined") {
+      if (this._escHandler) {
+        window.removeEventListener("keydown", this._escHandler);
+      }
+      this._escHandler = (e) => {
+        if (e.key === "Escape") handleClose();
+      };
+      window.addEventListener("keydown", this._escHandler);
+    }
 
     this.container.querySelector('[data-modal-action="download-card"]')?.addEventListener("click", () => {
       downloadResultCardPng(cardExportSummary);
@@ -445,6 +478,10 @@ export class MissionResultsModal {
 
   /** Hide and clear the modal. */
   hide() {
+    if (this._escHandler && typeof window !== "undefined") {
+      window.removeEventListener("keydown", this._escHandler);
+      this._escHandler = null;
+    }
     this.container.innerHTML = "";
   }
 

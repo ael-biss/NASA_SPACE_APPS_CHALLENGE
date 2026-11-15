@@ -150,7 +150,12 @@ test("MissionResultsModal renders top summary, Real Mission vs Your Design card,
     assert.ok(html.includes("$504M"), "renders real LRO cost");
     assert.ok(html.includes("Retry with Fixes"), "renders Retry with Fixes button");
     assert.ok(html.includes("Download Result Card (PNG)"), "renders Download Result Card button");
+    assert.ok(html.includes('data-modal-action="close"'), "renders close button on failure report");
     assert.ok(html.includes('<details class="oc-details gi-breakdown">'), "detailed breakdown starts collapsed (no open attr)");
+
+    // Clicking Close hides the report cleanly
+    handlers.close?.();
+    assert.equal(mockContainer.innerHTML, "");
 
     // Clicking Retry with Fixes invokes onModifyDesign keeping previous design intact
     handlers.modify();
