@@ -177,6 +177,6 @@ docker run --rm -p 8080:80 space-mission-game
 
 ## Resources & License
 
-- **Event:** 2026 NASA Space Apps Challenge — *Space Mission Design Game*
+- **Event:** 2026 NASA Space Apps Challenge —  [*Space Mission Design Game*](https://www.nasa.gov/wp-content/uploads/2025/04/250323-design-and-develop-science-mission.pdf?emrc=a454cf)
 - **NASA 3D Resources:** https://science.nasa.gov/3d-resources/
 - **License:** See [LICENSE](./LICENSE)
