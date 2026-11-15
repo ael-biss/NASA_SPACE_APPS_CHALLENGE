@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { buildSpacecraftModel } from "../spacecraft-design/index.js";
+import { DEFAULT_LAUNCH_SITE_ID, getLaunchSiteById } from "./data/launchSites.js";
 import { getOrbitById } from "./data/orbits.js";
 import { getRocketById } from "./data/rockets.js";
 import { OrbitMechanics } from "./logic/OrbitMechanics.js";
@@ -30,11 +31,13 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
   const mechanics = new OrbitMechanics();
   const planetScene = new PlanetScene();
   const launchAnimation = new LaunchAnimation();
+  const launchSite = getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID);
 
-  const earthGroup = planetScene.buildEarth();
+  const earthGroup = planetScene.buildEarth(launchSite);
   const targetOrbitId = gameState.mission?.targetOrbitId || "LUNAR";
   const orbit = getOrbitById(targetOrbitId) ?? getOrbitById("LEO");
-  planetScene.buildOrbitRing(orbit);
+  const initialDvBreakdown = mechanics.calculateSiteDeltaVBreakdown(orbit, launchSite);
+  planetScene.buildOrbitRing(orbit, launchSite, initialDvBreakdown.azimuthDeg);
 
   const rootGroup = new THREE.Group();
   rootGroup.name = "launch-orbit-module";
@@ -70,9 +73,14 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     const resolvedOrbit = getOrbitById(orbitId) ?? orbit;
     const launchResult = mechanics.simulateLaunch(rocket, gameState.spacecraft, resolvedOrbit, {
       fairingId,
+      launchSite,
       missionSpec: gameState.mission,
     });
     gameState.setLaunch(launchResult);
+
+    const launchAzimuthDeg = launchResult.missionStats?.launchAzimuthDeg ?? 90;
+    planetScene.orientToSite(launchSite);
+    planetScene.buildOrbitRing(resolvedOrbit, launchSite, launchAzimuthDeg);
 
     if (currentSpacecraftHandle?.spacecraft) {
       currentSpacecraftHandle.spacecraft.dispose();
@@ -89,6 +97,8 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
     panel.setFlightState(launchResult);
 
     launchAnimation.start(rocket, currentSpacecraftHandle, resolvedOrbit, launchResult, {
+      siteFrame: planetScene.getLaunchSiteFrame(launchSite, launchAzimuthDeg),
+      getSiteFrame: () => planetScene.getLaunchSiteFrame(launchSite, launchAzimuthDeg),
       onPhaseUpdate: (phaseIndex, phase, telemetry) => {
         panel.updateTelemetry({
           phaseIndex,
@@ -132,7 +142,7 @@ export function mount(sceneManager, gameState, uiContainer, options = {}) {
 export function update(deltaTime) {
   if (!activeState) return;
   const { planetScene, launchAnimation, controls, sceneManager } = activeState;
-  planetScene.update(deltaTime);
+  planetScene.update(deltaTime, launchAnimation.running);
   launchAnimation.update(deltaTime);
 
   const shake = launchAnimation.getCameraShake();

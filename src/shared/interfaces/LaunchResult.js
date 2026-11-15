@@ -20,6 +20,7 @@
  * @typedef {Object} LaunchResult
  * @property {string} rocketId - Selected launch vehicle ID
  * @property {string} fairingId - Selected fairing / launch adapter ID
+ * @property {string} launchSiteId - Launch site ID (e.g. "ksc-lc39a")
  * @property {string} targetOrbitId - Target orbit ID
  * @property {boolean} success - Whether the spacecraft reached the target orbit
  * @property {number} achievedAltitudeKm - Final orbital altitude reached in km
@@ -43,6 +44,7 @@ export function createDefaultLaunchResult() {
   return {
     rocketId: "",
     fairingId: "standard-fairing",
+    launchSiteId: "ksc-lc39a",
     targetOrbitId: "LEO",
     success: false,
     achievedAltitudeKm: 0,

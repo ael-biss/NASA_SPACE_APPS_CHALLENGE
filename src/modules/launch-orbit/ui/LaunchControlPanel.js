@@ -6,6 +6,7 @@
  */
 
 import { PHYSICS } from "../../../shared/data/constants.js";
+import { DEFAULT_LAUNCH_SITE_ID, getLaunchSiteById } from "../data/launchSites.js";
 import { getFairings, getRockets } from "../data/rockets.js";
 import { getOrbitById } from "../data/orbits.js";
 import { OrbitMechanics } from "../logic/OrbitMechanics.js";
@@ -170,8 +171,17 @@ export class LaunchControlPanel {
 
     const scMass = spacecraft?.totalMassKg ?? 0;
     const scDeltaV = spacecraft?.deltaVMs ?? 0;
+    const launchSite = getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID);
+    const dvBreakdown = this._mechanics.calculateSiteDeltaVBreakdown(orbit, launchSite);
     const totalDeltaV = (selectedRocket?.launcherDeltaVMs ?? 0) + scDeltaV;
-    const requiredDeltaV = orbit?.requiredDeltaVMs ?? 9400;
+    const requiredDeltaV = dvBreakdown.effectiveDeltaVMs || orbit?.requiredDeltaVMs || 8992;
+
+    const penaltyLabel =
+      dvBreakdown.penaltyKind === "plane-change"
+        ? `+${dvBreakdown.planeChangeDeltaVMs} m/s (0° plane)`
+        : dvBreakdown.penaltyKind === "azimuth"
+          ? `+${dvBreakdown.azimuthPenaltyMs} m/s (${dvBreakdown.azimuthDeg}° az)`
+          : "0 m/s (28.6° due east)";
 
     const instrumentCost = (mission?.instruments ?? []).reduce(
       (s, i) => s + (i.costMillions ?? 0),
@@ -238,6 +248,10 @@ export class LaunchControlPanel {
         <header class="lo-header">
           <span class="lo-badge">PHASE 3 · LAUNCH PAD</span>
           <h2>Launch Vehicle &amp; Fairing</h2>
+          <div class="lo-site-pill">
+            <strong>${this._escape(launchSite.name)}</strong>
+            <span>${launchSite.latitudeDeg}°N, ${Math.abs(launchSite.longitudeDeg)}°W · Az ${dvBreakdown.azimuthDeg}°</span>
+          </div>
         </header>
         <div class="lo-scroll">
           ${rocketCards}
@@ -246,8 +260,10 @@ export class LaunchControlPanel {
         </div>
         <footer class="lo-footer">
           <div class="lo-metrics">
-            <div><span>Target Orbit</span><strong>${this._escape(orbit.id)}</strong></div>
+            <div><span>Target Orbit</span><strong>${this._escape(orbit.id)} (${orbit.inclinationDeg ?? 28.6}°)</strong></div>
             <div><span>Stack Δv</span><strong class="${totalDeltaV >= requiredDeltaV ? "lo-ok" : "lo-warn"}">${Math.round(totalDeltaV).toLocaleString()} / ${requiredDeltaV.toLocaleString()} m/s</strong></div>
+            <div><span>Earth Spin Assist</span><strong class="lo-ok">−${dvBreakdown.rotationBonusMs} m/s</strong></div>
+            <div><span>Inclination Cost</span><strong class="${dvBreakdown.inclinationPenaltyMs > 0 ? "lo-warn" : "lo-ok"}">${penaltyLabel}</strong></div>
             <div><span>Spacecraft Mass</span><strong>${Math.round(scMass)} / ${selectedRocket.maxPayloadLeoKg} kg</strong></div>
             <div><span>Total Cost</span><strong class="${totalMissionCost <= budgetCap ? "lo-ok" : "lo-warn"}">$${totalMissionCost.toFixed(1)}M / $${budgetCap}M</strong></div>
           </div>
@@ -403,6 +419,19 @@ export class LaunchControlPanel {
         font-weight: 700;
       }
       .lo-header h2 { font-size: 16px; font-weight: 700; margin-top: 2px; }
+      .lo-site-pill {
+        margin-top: 6px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: rgba(14, 116, 144, 0.22);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        font-size: 11px;
+      }
+      .lo-site-pill strong { color: #e0f2fe; font-size: 11.5px; }
+      .lo-site-pill span { color: #94a3b8; font-size: 10px; }
       .lo-subhead {
         font-size: 10px;
         letter-spacing: 0.08em;

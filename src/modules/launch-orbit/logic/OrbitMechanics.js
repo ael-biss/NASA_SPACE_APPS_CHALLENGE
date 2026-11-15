@@ -9,6 +9,11 @@
 
 import { PHYSICS } from "../../../shared/data/constants.js";
 import { createDefaultLaunchResult } from "../../../shared/interfaces/LaunchResult.js";
+import {
+  DEFAULT_LAUNCH_SITE_ID,
+  calculateSiteRotationBonusMs,
+  getLaunchSiteById,
+} from "../data/launchSites.js";
 import { getOrbitById } from "../data/orbits.js";
 import { getFairingById, getRocketById } from "../data/rockets.js";
 
@@ -87,51 +92,159 @@ export class OrbitMechanics {
   }
 
   /**
-   * Compute required delta-v (m/s) from Earth's surface to a target orbit.
-   * Uses the orbit's explicit requiredDeltaVMs when provided, or derives it from
-   * LEO orbital velocity + ascent losses + Hohmann transfer delta-v.
+   * Compute required delta-v (m/s) from a launch site to a target orbit, including:
+   * - Baseline orbital speed + ascent losses (+ Hohmann transfer)
+   * - Earth rotation bonus v = omega * R * cos(lat) (~408 m/s at KSC 28.6°N) subtracted from ascent
+   * - Plane-change delta-v for inclinations below site latitude (e.g. 0° GEO)
+   * - Azimuth penalty for inclinations above site latitude (e.g. 55° MEO)
+   *
    * @param {Object | string} orbit
-   * @returns {number}
+   * @param {string | Object} [launchSite]
+   * @returns {{
+   *   baseDeltaVMs: number,
+   *   rotationBonusMs: number,
+   *   planeChangeDeltaVMs: number,
+   *   azimuthPenaltyMs: number,
+   *   inclinationPenaltyMs: number,
+   *   effectiveDeltaVMs: number,
+   *   azimuthDeg: number,
+   *   siteMinInclDeg: number,
+   *   targetInclDeg: number,
+   *   penaltyKind: "none" | "plane-change" | "azimuth",
+   *   launchSite: Object
+   * }}
    */
-  calculateRequiredDeltaV(orbit) {
-    const resolved = typeof orbit === "string" ? getOrbitById(orbit) : orbit;
-    if (!resolved || typeof resolved !== "object") return 0;
+  calculateSiteDeltaVBreakdown(orbit, launchSite = DEFAULT_LAUNCH_SITE_ID) {
+    const site = getLaunchSiteById(launchSite);
+    const empty = {
+      baseDeltaVMs: 0,
+      rotationBonusMs: 0,
+      planeChangeDeltaVMs: 0,
+      azimuthPenaltyMs: 0,
+      inclinationPenaltyMs: 0,
+      effectiveDeltaVMs: 0,
+      azimuthDeg: site?.defaultAzimuthDeg ?? 90,
+      siteMinInclDeg: Math.abs(site?.latitudeDeg ?? 28.6),
+      targetInclDeg: Math.abs(site?.latitudeDeg ?? 28.6),
+      penaltyKind: "none",
+      launchSite: site,
+    };
 
+    const resolved = typeof orbit === "string" ? getOrbitById(orbit) : orbit;
+    if (!resolved || typeof resolved !== "object") return empty;
+
+    let baseDeltaVMs = 0;
     if (
       typeof resolved.requiredDeltaVMs === "number" &&
       Number.isFinite(resolved.requiredDeltaVMs) &&
       resolved.requiredDeltaVMs > 0
     ) {
-      return resolved.requiredDeltaVMs;
-    }
-
-    if (
-      typeof resolved.altitudeKm !== "number" ||
-      !Number.isFinite(resolved.altitudeKm) ||
-      resolved.altitudeKm < 0
+      baseDeltaVMs = resolved.requiredDeltaVMs;
+    } else if (
+      typeof resolved.altitudeKm === "number" &&
+      Number.isFinite(resolved.altitudeKm) &&
+      resolved.altitudeKm >= 0
     ) {
-      return 0;
+      const leoBaselineMs =
+        this.calculateOrbitalVelocity(LEO_REFERENCE_ALTITUDE_KM) + LEO_ASCENT_LOSSES_MS;
+
+      if (resolved.altitudeKm <= LEO_REFERENCE_ALTITUDE_KM) {
+        baseDeltaVMs = this.calculateOrbitalVelocity(resolved.altitudeKm) + LEO_ASCENT_LOSSES_MS;
+      } else {
+        const transferMs = this.calculateHohmannTransferDeltaV(
+          LEO_REFERENCE_ALTITUDE_KM,
+          resolved.altitudeKm
+        );
+        const overheadMs =
+          typeof resolved.insertionOverheadMs === "number" &&
+          Number.isFinite(resolved.insertionOverheadMs) &&
+          resolved.insertionOverheadMs > 0
+            ? resolved.insertionOverheadMs
+            : 0;
+        baseDeltaVMs = leoBaselineMs + transferMs + overheadMs;
+      }
+    } else {
+      return empty;
     }
 
-    const leoBaselineMs =
-      this.calculateOrbitalVelocity(LEO_REFERENCE_ALTITUDE_KM) + LEO_ASCENT_LOSSES_MS;
+    const rawRotationBonusMs = calculateSiteRotationBonusMs(site);
+    const rotationBonusMs = Math.round(rawRotationBonusMs);
+    const siteMinInclDeg = Math.abs(site.latitudeDeg ?? 28.6);
+    const isEarthOrbit = !resolved.targetBody || resolved.targetBody === "Earth";
+    const targetInclDeg =
+      isEarthOrbit && typeof resolved.inclinationDeg === "number" && Number.isFinite(resolved.inclinationDeg)
+        ? Math.max(0, Math.min(180, resolved.inclinationDeg))
+        : siteMinInclDeg;
 
-    if (resolved.altitudeKm <= LEO_REFERENCE_ALTITUDE_KM) {
-      return this.calculateOrbitalVelocity(resolved.altitudeKm) + LEO_ASCENT_LOSSES_MS;
+    let azimuthDeg = 90;
+    let planeChangeDeltaVMs = 0;
+    let azimuthPenaltyMs = 0;
+    let penaltyKind = "none";
+
+    const inclEpsilon = 0.05;
+    if (isEarthOrbit && targetInclDeg < siteMinInclDeg - inclEpsilon) {
+      // Launch due east into parking inclination = site latitude, then perform plane change
+      const deltaInclRad = ((siteMinInclDeg - targetInclDeg) * Math.PI) / 180;
+      const targetAltKm =
+        typeof resolved.altitudeKm === "number" && Number.isFinite(resolved.altitudeKm)
+          ? resolved.altitudeKm
+          : LEO_REFERENCE_ALTITUDE_KM;
+
+      if (targetAltKm > LEO_REFERENCE_ALTITUDE_KM) {
+        const r1 = this.calculateOrbitalRadiusKm(LEO_REFERENCE_ALTITUDE_KM);
+        const r2 = this.calculateOrbitalRadiusKm(targetAltKm);
+        const vApogeeTransfer = Math.sqrt(PHYSICS.EARTH_MU_KM3_S2 * (2 / r2 - 2 / (r1 + r2))) * 1000;
+        const vCircularTarget = this.calculateOrbitalVelocity(targetAltKm);
+        const dvCoplanar = Math.abs(vCircularTarget - vApogeeTransfer);
+        const dvCombined = Math.sqrt(
+          vApogeeTransfer * vApogeeTransfer +
+            vCircularTarget * vCircularTarget -
+            2 * vApogeeTransfer * vCircularTarget * Math.cos(deltaInclRad)
+        );
+        planeChangeDeltaVMs = Math.round(Math.max(0, dvCombined - dvCoplanar));
+      } else {
+        const vCircular = this.calculateOrbitalVelocity(targetAltKm);
+        planeChangeDeltaVMs = Math.round(2 * vCircular * Math.sin(deltaInclRad / 2));
+      }
+      penaltyKind = "plane-change";
+    } else if (isEarthOrbit && targetInclDeg > siteMinInclDeg + inclEpsilon) {
+      // Higher inclination than latitude: steer northeast/southeast azimuth, losing eastward Earth spin
+      const siteLatRad = (siteMinInclDeg * Math.PI) / 180;
+      const targetInclRad = (targetInclDeg * Math.PI) / 180;
+      const sinAzimuth = Math.max(-1, Math.min(1, Math.cos(targetInclRad) / Math.max(1e-6, Math.cos(siteLatRad))));
+      azimuthDeg = Number(((Math.asin(Math.abs(sinAzimuth)) * 180) / Math.PI).toFixed(1));
+      const effectiveRotationMs = rawRotationBonusMs * sinAzimuth;
+      azimuthPenaltyMs = Math.round(Math.max(0, rawRotationBonusMs - effectiveRotationMs));
+      penaltyKind = "azimuth";
     }
 
-    const transferMs = this.calculateHohmannTransferDeltaV(
-      LEO_REFERENCE_ALTITUDE_KM,
-      resolved.altitudeKm
-    );
-    const overheadMs =
-      typeof resolved.insertionOverheadMs === "number" &&
-      Number.isFinite(resolved.insertionOverheadMs) &&
-      resolved.insertionOverheadMs > 0
-        ? resolved.insertionOverheadMs
-        : 0;
+    const inclinationPenaltyMs = planeChangeDeltaVMs + azimuthPenaltyMs;
+    const effectiveDeltaVMs = Math.max(0, Math.round(baseDeltaVMs - rotationBonusMs + inclinationPenaltyMs));
 
-    return leoBaselineMs + transferMs + overheadMs;
+    return {
+      baseDeltaVMs: Math.round(baseDeltaVMs),
+      rotationBonusMs,
+      planeChangeDeltaVMs,
+      azimuthPenaltyMs,
+      inclinationPenaltyMs,
+      effectiveDeltaVMs,
+      azimuthDeg,
+      siteMinInclDeg,
+      targetInclDeg,
+      penaltyKind,
+      launchSite: site,
+    };
+  }
+
+  /**
+   * Compute required delta-v (m/s) from the launch site to a target orbit.
+   * Applies Earth's rotation assist and site-to-orbit plane-change / azimuth costs.
+   * @param {Object | string} orbit
+   * @param {string | Object} [launchSite]
+   * @returns {number}
+   */
+  calculateRequiredDeltaV(orbit, launchSite = DEFAULT_LAUNCH_SITE_ID) {
+    return this.calculateSiteDeltaVBreakdown(orbit, launchSite).effectiveDeltaVMs;
   }
 
   /**
@@ -174,11 +287,15 @@ export class OrbitMechanics {
     const resolvedRocket = typeof rocket === "string" ? getRocketById(rocket) : rocket;
     const resolvedOrbit =
       typeof targetOrbit === "string" ? getOrbitById(targetOrbit) : targetOrbit;
+    const resolvedSite = getLaunchSiteById(
+      options.launchSite ?? options.launchSiteId ?? DEFAULT_LAUNCH_SITE_ID
+    );
     const resolvedFairing =
       getFairingById(options.fairingId ?? "standard-fairing") ??
       getFairingById("standard-fairing");
 
     result.fairingId = resolvedFairing?.id ?? "standard-fairing";
+    result.launchSiteId = resolvedSite?.id ?? DEFAULT_LAUNCH_SITE_ID;
 
     if (!resolvedRocket || typeof resolvedRocket !== "object") {
       result.failureReason = "No valid launch vehicle selected.";
@@ -239,12 +356,13 @@ export class OrbitMechanics {
     const fairingMassKg = resolvedFairing?.massKg ?? 0;
     const effectivePayloadKg = spacecraftSpec.totalMassKg + fairingMassKg;
 
-    const requiredDeltaV = this.calculateRequiredDeltaV(resolvedOrbit);
+    const dvBreakdown = this.calculateSiteDeltaVBreakdown(resolvedOrbit, resolvedSite);
+    const requiredDeltaV = dvBreakdown.effectiveDeltaVMs;
     const spacecraftDeltaV = this.calculateSpacecraftDeltaV(spacecraftSpec);
     const launcherDeltaV =
       typeof resolvedRocket.launcherDeltaVMs === "number" ? resolvedRocket.launcherDeltaVMs : 0;
     const totalDeltaV = launcherDeltaV + spacecraftDeltaV;
-    const leoRequiredDeltaV = this.calculateRequiredDeltaV("LEO") || 9400;
+    const leoRequiredDeltaV = this.calculateRequiredDeltaV("LEO", resolvedSite) || 8992;
 
     // ------------------------------------------------------------
     // PHASE 1: LIFTOFF (TWR > 1, Payload Capacity)
@@ -274,6 +392,13 @@ export class OrbitMechanics {
       result.failureFix = fix;
       result.failureMode = failureMode;
       result.missionStats = {
+        launchSiteId: resolvedSite.id,
+        launchSiteName: resolvedSite.name,
+        launchAzimuthDeg: dvBreakdown.azimuthDeg,
+        rotationBonusMs: dvBreakdown.rotationBonusMs,
+        planeChangeDeltaVMs: dvBreakdown.planeChangeDeltaVMs,
+        azimuthPenaltyMs: dvBreakdown.azimuthPenaltyMs,
+        inclinationPenaltyMs: dvBreakdown.inclinationPenaltyMs,
         totalDeltaVMs: Math.round(totalDeltaV),
         requiredDeltaVMs: Math.round(requiredDeltaV),
         twr: Number(twr.toFixed(2)),
@@ -318,8 +443,13 @@ export class OrbitMechanics {
       id: "liftoff",
       name: "1. Liftoff & Tower Clear",
       status: "passed",
-      summary: `TWR ${twr.toFixed(2)} · Payload ${Math.round(effectivePayloadKg)} / ${resolvedRocket.maxPayloadLeoKg} kg`,
-      metrics: { twr: Number(twr.toFixed(2)), payloadKg: Math.round(effectivePayloadKg) },
+      summary: `${resolvedSite.shortName} (${resolvedSite.latitudeDeg}°N) · Az ${dvBreakdown.azimuthDeg}° · TWR ${twr.toFixed(2)}`,
+      metrics: {
+        launchSiteId: resolvedSite.id,
+        azimuthDeg: dvBreakdown.azimuthDeg,
+        twr: Number(twr.toFixed(2)),
+        payloadKg: Math.round(effectivePayloadKg),
+      },
     });
 
     // ------------------------------------------------------------
@@ -443,8 +573,14 @@ export class OrbitMechanics {
       id: "ascent",
       name: "3. Ascent & Staging",
       status: "passed",
-      summary: `${peakG.toFixed(1)}g · ${effectiveVibG.toFixed(1)}g vib · v=${Math.round(leoVelMs)} m/s`,
-      metrics: { peakG, effectiveVibG: Number(effectiveVibG.toFixed(2)), leoVelMs: Math.round(leoVelMs) },
+      summary: `${peakG.toFixed(1)}g · Spin assist -${dvBreakdown.rotationBonusMs} m/s · v=${Math.round(leoVelMs)} m/s`,
+      metrics: {
+        peakG,
+        effectiveVibG: Number(effectiveVibG.toFixed(2)),
+        leoVelMs: Math.round(leoVelMs),
+        rotationBonusMs: dvBreakdown.rotationBonusMs,
+        azimuthPenaltyMs: dvBreakdown.azimuthPenaltyMs,
+      },
     });
 
     // ------------------------------------------------------------
@@ -781,6 +917,13 @@ export class OrbitMechanics {
     result.failureFix = "";
     result.failureMode = "";
     result.missionStats = {
+      launchSiteId: resolvedSite.id,
+      launchSiteName: resolvedSite.name,
+      launchAzimuthDeg: dvBreakdown.azimuthDeg,
+      rotationBonusMs: dvBreakdown.rotationBonusMs,
+      planeChangeDeltaVMs: dvBreakdown.planeChangeDeltaVMs,
+      azimuthPenaltyMs: dvBreakdown.azimuthPenaltyMs,
+      inclinationPenaltyMs: dvBreakdown.inclinationPenaltyMs,
       totalDeltaVMs: Math.round(totalDeltaV),
       requiredDeltaVMs: Math.round(requiredDeltaV),
       twr: Number(twr.toFixed(2)),

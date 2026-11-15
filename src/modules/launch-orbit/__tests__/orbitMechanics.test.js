@@ -12,9 +12,17 @@ import { ORBIT_IDS, PHYSICS } from "../../../shared/data/constants.js";
 import { DEFAULT_SELECTION } from "../../spacecraft-design/data/components.js";
 import { SpacecraftConfig } from "../../spacecraft-design/logic/SpacecraftConfig.js";
 import { MissionEvaluator } from "../../mission-science/logic/MissionEvaluator.js";
+import {
+  DEFAULT_LAUNCH_SITE_ID,
+  LAUNCH_SITES,
+  calculateSiteRotationBonusMs,
+  getLaunchSiteById,
+} from "../data/launchSites.js";
 import { ROCKETS, getRocketById, getRockets } from "../data/rockets.js";
 import { ORBITS, getOrbitById, getOrbits } from "../data/orbits.js";
 import { OrbitMechanics } from "../logic/OrbitMechanics.js";
+import { PlanetScene } from "../models/PlanetScene.js";
+import { LaunchAnimation } from "../models/LaunchAnimation.js";
 
 test("ROCKETS catalog is populated with valid launch vehicles and lookup helpers", () => {
   assert.ok(ROCKETS.length >= 4);
@@ -81,12 +89,14 @@ test("OrbitMechanics computes v = sqrt(mu/r), escape velocity, period, and Hohma
 test("OrbitMechanics derives required delta-v for catalog and custom orbits", () => {
   const mechanics = new OrbitMechanics();
 
-  assert.equal(mechanics.calculateRequiredDeltaV("LEO"), 9400);
-  assert.equal(mechanics.calculateRequiredDeltaV(getOrbitById("GEO")), 13500);
+  // From KSC LC-39A (28.6°N): Earth spin assist (~408 m/s) reduces 9,400 m/s baseline to 8,992 m/s
+  assert.equal(mechanics.calculateRequiredDeltaV("LEO"), 8992);
+  // GEO (0° incl): 13,500 - 408 spin + 374 apogee plane-change = 13,466 m/s
+  assert.equal(mechanics.calculateRequiredDeltaV(getOrbitById("GEO")), 13466);
 
-  // Custom orbit without explicit requiredDeltaVMs derives from v = sqrt(mu/r) + Hohmann
+  // Custom orbit without explicit requiredDeltaVMs derives from v = sqrt(mu/r) + Hohmann - spin assist
   const customGeo = mechanics.calculateRequiredDeltaV({ altitudeKm: 35786 });
-  assert.ok(Math.abs(customGeo - (9400 + 3818.61)) < 1.0, `Got ${customGeo}`);
+  assert.ok(Math.abs(customGeo - (9400 + 3818.61 - 408)) < 2.0, `Got ${customGeo}`);
   assert.equal(mechanics.calculateRequiredDeltaV(null), 0);
 });
 
@@ -146,16 +156,22 @@ test("OrbitMechanics.simulateLaunch rejects overweight payloads and insufficient
   assert.equal(overweightResult.remainingDeltaVMs, 0);
   assert.ok(overweightResult.failureReason.includes("exceeds"));
 
-  // Insufficient delta-v: medium-orbital (11800) + cold-gas (~25 m/s) cannot reach GEO (13500)
+  // Insufficient delta-v: medium-orbital (11800) + cold-gas (~25 m/s) cannot capture GEO (13466)
   const lowDvConfig = new SpacecraftConfig({
     ...DEFAULT_SELECTION,
+    structureId: "medium-oct",
+    solarPanelId: "twin-deployable",
+    batteryId: "li-ion-dual",
+    antennaId: "x-band-medium",
+    avionicsId: "redundant-obc",
+    thermalId: "heaters-mli",
     propulsionId: "cold-gas",
   });
   const lowDvSpec = lowDvConfig.toSpacecraftSpec();
 
   const lowDvGeoResult = mechanics.simulateLaunch("medium-orbital", lowDvSpec, "GEO");
   assert.equal(lowDvGeoResult.success, false);
-  // Rocket itself exceeded 9400 m/s LEO threshold, so stranded at 500 km LEO parking orbit
+  // Cleared LEO parking orbit (and GTO burn), stranded before GEO circularization/capture
   assert.equal(lowDvGeoResult.achievedAltitudeKm, 500);
   assert.equal(lowDvGeoResult.remainingDeltaVMs, 0);
   assert.ok(lowDvGeoResult.failureReason.includes("Insufficient delta-v"));
@@ -453,4 +469,87 @@ test("Phase-by-phase simulator fails at exact expected phase with cause and fix"
   assert.equal(captureFail.success, false);
   assert.equal(captureFail.failedPhaseId, "orbit-insertion");
   assert.equal(captureFail.failureMode, "missed-capture");
+});
+
+test("KSC LC-39A launch site applies Earth-rotation bonus and inclination plane-change / azimuth costs", () => {
+  const mechanics = new OrbitMechanics();
+  const ksc = getLaunchSiteById(DEFAULT_LAUNCH_SITE_ID);
+
+  assert.ok(LAUNCH_SITES.length >= 1);
+  assert.equal(ksc.id, "ksc-lc39a");
+  assert.equal(ksc.latitudeDeg, 28.6);
+  assert.equal(ksc.longitudeDeg, -80.6);
+
+  // v_rot = omega * R * cos(28.6°) ≈ 407.9 m/s (~408 m/s)
+  const kscRot = calculateSiteRotationBonusMs(ksc);
+  assert.ok(Math.abs(kscRot - 408) < 1.0, `Expected ~408 m/s, got ${kscRot}`);
+
+  // LEO (28.6°): due east azimuth 90°, zero plane-change cost
+  const leoBreakdown = mechanics.calculateSiteDeltaVBreakdown("LEO", ksc);
+  assert.equal(leoBreakdown.rotationBonusMs, 408);
+  assert.equal(leoBreakdown.inclinationPenaltyMs, 0);
+  assert.equal(leoBreakdown.azimuthDeg, 90);
+  assert.equal(leoBreakdown.penaltyKind, "none");
+  assert.equal(leoBreakdown.effectiveDeltaVMs, 8992);
+
+  // GEO (0°): combined apogee plane-change Δv (+360 m/s) from 28.6° parking orbit
+  const geoBreakdown = mechanics.calculateSiteDeltaVBreakdown("GEO", ksc);
+  assert.equal(geoBreakdown.rotationBonusMs, 408);
+  assert.ok(geoBreakdown.planeChangeDeltaVMs > 300, `Expected GEO plane-change > 300, got ${geoBreakdown.planeChangeDeltaVMs}`);
+  assert.equal(geoBreakdown.penaltyKind, "plane-change");
+  assert.equal(geoBreakdown.effectiveDeltaVMs, 13500 - 408 + geoBreakdown.planeChangeDeltaVMs);
+
+  // MEO (55°): northeast launch azimuth (~40.8°) loses part of Earth spin bonus
+  const meoBreakdown = mechanics.calculateSiteDeltaVBreakdown("MEO", ksc);
+  assert.ok(meoBreakdown.azimuthDeg < 45 && meoBreakdown.azimuthDeg > 35, `Got az ${meoBreakdown.azimuthDeg}`);
+  assert.ok(meoBreakdown.azimuthPenaltyMs > 100, `Expected azimuth penalty > 100, got ${meoBreakdown.azimuthPenaltyMs}`);
+  assert.equal(meoBreakdown.penaltyKind, "azimuth");
+
+  // Equatorial site (0° lat): higher rotation bonus (~465 m/s) and zero GEO plane-change penalty
+  const kourouLike = { id: "equatorial", name: "Equatorial Pad", latitudeDeg: 0, longitudeDeg: -52.8 };
+  const eqGeoBreakdown = mechanics.calculateSiteDeltaVBreakdown("GEO", kourouLike);
+  assert.ok(Math.abs(eqGeoBreakdown.rotationBonusMs - 465) <= 1);
+  assert.equal(eqGeoBreakdown.planeChangeDeltaVMs, 0);
+
+  // Launch result carries launchSiteId and site stats
+  const leoSpec = new SpacecraftConfig(DEFAULT_SELECTION).toSpacecraftSpec();
+  const launchRes = mechanics.simulateLaunch("medium-orbital", leoSpec, "LEO");
+  assert.equal(launchRes.launchSiteId, "ksc-lc39a");
+  assert.equal(launchRes.missionStats.rotationBonusMs, 408);
+  assert.equal(launchRes.missionStats.launchAzimuthDeg, 90);
+});
+
+test("PlanetScene latLonToVector3 and LaunchAnimation anchor liftoff to KSC LC-39A surface normal", () => {
+  const scene = new PlanetScene();
+  scene.buildEarth("ksc-lc39a");
+
+  const r = scene.getEarthRadius();
+  const kscPos = scene.latLonToVector3(28.6, -80.6, r);
+  assert.ok(Math.abs(kscPos.length() - r) < 1e-6);
+  // 28.6°N -> +Y; -80.6°W -> +Z facing toward camera and slight +X
+  assert.ok(kscPos.x > 0 && kscPos.y > 0 && kscPos.z > 0);
+
+  const frame = scene.getLaunchSiteFrame("ksc-lc39a", 90);
+  // Up (surface normal) and East (azimuth 90° heading) must be orthogonal unit vectors
+  assert.ok(Math.abs(frame.up.length() - 1) < 1e-6);
+  assert.ok(Math.abs(frame.heading.length() - 1) < 1e-6);
+  assert.ok(Math.abs(frame.up.dot(frame.heading)) < 1e-6);
+  // East from -80.6°W points predominantly along +X (over the Atlantic)
+  assert.ok(frame.east.x > 0.9);
+
+  // LaunchAnimation mounts stack on KSC pad along local surface normal
+  const mechanics = new OrbitMechanics();
+  const leoSpec = new SpacecraftConfig(DEFAULT_SELECTION).toSpacecraftSpec();
+  const launchRes = mechanics.simulateLaunch("medium-orbital", leoSpec, "LEO");
+  const anim = new LaunchAnimation();
+  anim.start({ id: "medium-orbital" }, null, getOrbitById("LEO"), launchRes, { siteFrame: frame });
+
+  const stack = anim.getGroup().getObjectByName("launch-vehicle-stack");
+  assert.ok(stack);
+  const stackDir = stack.position.clone().normalize();
+  assert.ok(stackDir.distanceTo(frame.up) < 1e-5, "Rocket must stand directly above KSC LC-39A normal");
+
+  anim.dispose?.();
+  anim.reset();
+  scene.dispose();
 });
