@@ -9,13 +9,12 @@ import "./styles/main.css";
 import { initGame } from "./modules/game-interface/index.js";
 
 const appRoot = document.getElementById("app") || document.body;
-initGame(appRoot);
 
 // Check if developer wants the standalone Launch & Orbit test harness:
 const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
 const isLaunchTestMode = urlParams?.get("mode") === "launch-test";
 
-if (isLaunchTestMode) {
+async function startLaunchTestHarness() {
   // ── Standalone Launch & Orbit Test Harness ─────────────────────────────────
   const { SceneManager } = await import("./core/SceneManager.js");
   const { GameState } = await import("./core/GameState.js");
@@ -156,6 +155,10 @@ if (isLaunchTestMode) {
     sceneManager.render();
   }
   requestAnimationFrame(animate);
+}
+
+if (isLaunchTestMode) {
+  startLaunchTestHarness();
 } else {
   // ── Standard Full Game Bootstrap ───────────────────────────────────────────
   initGame(appRoot);

@@ -363,7 +363,8 @@ export class OrbitMechanics {
       fairingMassKg
     );
 
-    const requiredDeltaV = this.calculateRequiredDeltaV(resolvedOrbit);
+    const dvBreakdown = this.calculateSiteDeltaVBreakdown(resolvedOrbit, resolvedSite);
+    const requiredDeltaV = dvBreakdown.effectiveDeltaVMs;
     const spacecraftDeltaV = this.calculateSpacecraftDeltaV(spacecraftSpec);
     const launcherDeltaV =
       typeof resolvedRocket.launcherDeltaVMs === "number" ? resolvedRocket.launcherDeltaVMs : 0;

@@ -3,7 +3,6 @@
  * @owner Member 3 (Launch & Orbit)
  * @goal Database of available launch vehicles and payload fairings with real physics specs:
  *       liftoff thrust, vehicle mass, max payload to LEO, delta-v boost, fairing diameter,
- *       peak Max-Q pressure, launch g-load, vibration RMS, and cost.
  *       peak Max-Q pressure, launch g-load, vibration RMS, cost, multi-stage architecture,
  *       and high-fidelity 3D visual specifications.
  */
@@ -25,56 +24,6 @@ export const ROCKETS = [
     vibrationGrms: 7.3,
     description:
       "Dedicated small-satellite launcher optimized for CubeSats and lightweight LEO payloads.",
-  },
-  {
-    id: "solid-sprint",
-    name: "Solid-Stage Express",
-    class: "Medium-Solid",
-    maxPayloadLeoKg: 850,
-    launcherDeltaVMs: 11200,
-    fairingDiameterM: 2.2,
-    costMillions: 16.0,
-    liftoffThrustKN: 1450,
-    liftoffMassKg: 82000,
-    maxQPa: 39000,
-    peakLaunchG: 9.0,
-    vibrationGrms: 8.5,
-    description:
-      "Budget solid-motor rocket with high thrust and lower cost, but severe launch g-loads and acoustic vibration.",
-  },
-  {
-    id: "medium-orbital",
-    name: "Medium Orbital LV",
-    class: "Medium-Lift",
-    maxPayloadLeoKg: 1200,
-    launcherDeltaVMs: 11800,
-    fairingDiameterM: 3.2,
-    costMillions: 28.0,
-    liftoffThrustKN: 1850,
-    liftoffMassKg: 138000,
-    maxQPa: 31000,
-    peakLaunchG: 5.2,
-    vibrationGrms: 5.4,
-    description:
-      "Reusable two-stage liquid workhorse capable of delivering medium buses to LEO, MEO, and GEO.",
-  },
-  {
-    id: "heavy-lift",
-    name: "Heavy Lift LV",
-    class: "Heavy-Lift",
-    maxPayloadLeoKg: 2500,
-    launcherDeltaVMs: 12800,
-    fairingDiameterM: 4.6,
-    costMillions: 52.0,
-    liftoffThrustKN: 4400,
-    liftoffMassKg: 315000,
-    maxQPa: 29500,
-    peakLaunchG: 4.6,
-    vibrationGrms: 4.7,
-    description:
-      "High-energy multi-core launch vehicle built for GEO telecom satellites and LRO-class Lunar orbiters.",
-  },
-  {
     stages: [
       {
         name: "Stage 1 (Booster)",
